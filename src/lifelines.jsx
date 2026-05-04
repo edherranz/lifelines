@@ -301,6 +301,418 @@ const RESOLUTION_INFO = {
   extraction: { name: 'Extraction', color: '#ff8500', icon: '⛏' },
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// MODEL CONSTANTS
+// Every numeric tunable in the simulation, with class, rationale, and range.
+// CLASS values:
+//   Empirical  — anchored in commonly cited demographic/structural ranges
+//   Calibrated — chosen so default rules produce distinct, plausible archetype outcomes
+//   Structural — modeling choice, defensible but not derivable from data
+// ═══════════════════════════════════════════════════════════════════════════
+const CONSTANT_DEFS = {
+  // ─── Capability dynamics ───
+  AI_CEILING_FACTOR: {
+    value: 4.0, group: 'capability', label: 'AI capability ceiling per energy unit', unit: '×',
+    class: 'Structural',
+    description: 'Maximum AI capability is this multiplied by the bloc\'s energy endowment.',
+    rationale: 'AI/compute is fundamentally energy-limited. A 4× headroom on energy lets capability grow but not unboundedly. Tuning 3–6 yields qualitatively similar shapes; 4 is a midpoint.',
+    range: [2, 8],
+  },
+  ROBOT_CEILING_FACTOR: {
+    value: 3.0, group: 'capability', label: 'Robot capability ceiling per chip endowment', unit: '×',
+    class: 'Structural',
+    description: 'Robotics is bounded by semiconductor fabrication base.',
+    rationale: 'Robots need chips. Lower factor than AI because hardware deployment is harder than software.',
+    range: [1.5, 5],
+  },
+  AI_GROWTH_BASE: {
+    value: 0.06, group: 'capability', label: 'Base AI growth rate at aiGrowth=100', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Per-year fractional growth at maximum aiGrowth setting; modulated by alignment.',
+    rationale: '6%/yr maps to the rule going from 0.10 to ~3–5 over 150 years — a transformative-but-not-instant capability trajectory. Tuned alongside other dynamics.',
+    range: [0.02, 0.12],
+  },
+  ROBOT_GROWTH_BASE: {
+    value: 0.04, group: 'capability', label: 'Base robot growth rate at robotGrowth=100', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Per-year fractional growth at maximum robotGrowth setting.',
+    rationale: 'Set lower than AI because physical capital deployment lags software.',
+    range: [0.02, 0.10],
+  },
+  ALIGNMENT_GROWTH_DRAG: {
+    value: 0.5, group: 'capability', label: 'Alignment drag on growth', unit: '×',
+    class: 'Structural',
+    description: 'Tighter alignment (closer to 1) slows capability growth by up to this factor.',
+    rationale: 'Alignment is costly: stricter constraints slow deployment. 50% peak drag is a moderate stipulation.',
+    range: [0, 1],
+  },
+
+  // ─── Capability dividends ───
+  MEDICAL_DIVIDEND_FACTOR: {
+    value: 0.30, group: 'dividends', label: 'Medical dividend coefficient', unit: '×',
+    class: 'Structural',
+    description: 'Fraction of total capability that translates to mortality reduction (when share-to-society is high).',
+    rationale: 'High capability → better healthcare, but conditional on alignment + low concentration. 30% is moderate.',
+    range: [0, 0.6],
+  },
+  PRODUCTIVITY_DIVIDEND_FACTOR: {
+    value: 0.40, group: 'dividends', label: 'Productivity dividend coefficient', unit: '×',
+    class: 'Structural',
+    description: 'Fraction of total capability that translates to labor productivity gains.',
+    rationale: 'Higher than medical because productivity gains are more direct.',
+    range: [0, 0.6],
+  },
+  SHARE_TO_SOCIETY_CONC_DRAG: {
+    value: 0.7, group: 'dividends', label: 'Capital concentration penalty on dividends', unit: '×',
+    class: 'Structural',
+    description: 'How much capital concentration reduces the share of dividends that flow to society.',
+    rationale: 'When concentration is 1, society gets only 30% of what it would at zero concentration. Models capture: who owns the capability gets the gains.',
+    range: [0.3, 0.9],
+  },
+
+  // ─── External shocks ───
+  SHOCK_PROB: {
+    value: 0.030, group: 'shocks', label: 'External shock probability per year', unit: '/yr',
+    class: 'Structural',
+    description: 'Probability of a significant macroeconomic shock in any given year.',
+    rationale: '~3%/yr means ~5 shocks per 150-year run — a moderate background rate of macroeconomic disruption.',
+    range: [0, 0.10],
+  },
+  FOOD_SHOCK_BASE_PROB: {
+    value: 0.015, group: 'shocks', label: 'Food shock base probability per year', unit: '/yr',
+    class: 'Structural',
+    description: 'Baseline probability of a food crisis, before agriculture-vulnerability adjustment.',
+    rationale: 'Climate variability drives food crises at this baseline rate. Vulnerability multiplier increases for low-agriculture endowments.',
+    range: [0, 0.05],
+  },
+
+  // ─── Mortality ───
+  BASE_DEATH: {
+    value: 0.0125, group: 'mortality', label: 'Base death rate', unit: '/yr',
+    class: 'Empirical',
+    description: 'Universal mortality floor before any drivers.',
+    rationale: 'A baseline annual mortality of ~12.5 per 1,000 person-years sits in the plausible range for a mature population. This represents background mortality before any of the model\'s drivers kick in.',
+    range: [0.008, 0.018],
+  },
+  MEDICAL_OFFSET_CAP: {
+    value: 0.004, group: 'mortality', label: 'Medical-offset cap', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Maximum mortality reduction from capability-driven medical advances.',
+    rationale: 'Caps how much capability-driven medical advances can extend life. Set so that even maximum dividends produce a bounded, plausible improvement rather than runaway gains.',
+    range: [0.002, 0.008],
+  },
+  POVERTY_DEATH_SCALE: {
+    value: 0.012, group: 'mortality', label: 'Poverty mortality scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality contribution per unit of income deficit below 0.65.',
+    rationale: 'Set so that a bloc with income substantially below the threshold sees a noticeable but not extreme mortality increase from poverty.',
+    range: [0.005, 0.025],
+  },
+  POVERTY_THRESHOLD: {
+    value: 0.65, group: 'mortality', label: 'Poverty mortality threshold', unit: '',
+    class: 'Structural',
+    description: 'Income level below which poverty mortality kicks in.',
+    rationale: 'Below this normalized income level, poverty mortality starts to contribute. The threshold separates "comfortable enough" from "in deprivation" in the model\'s coarse income units.',
+    range: [0.4, 0.85],
+  },
+  DESPAIR_DEATH_SCALE: {
+    value: 0.006, group: 'mortality', label: 'Despair mortality scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality contribution per unit unemployment unbuffered by UBI.',
+    rationale: 'Represents deaths of despair — substance abuse, suicide, and related causes that tend to rise with sustained mass unemployment. Scale chosen so that severe unemployment without buffering produces a visible mortality contribution.',
+    range: [0.002, 0.012],
+  },
+  DESPAIR_UBI_DAMP: {
+    value: 0.95, group: 'mortality', label: 'UBI dampening on despair', unit: '×',
+    class: 'Structural',
+    description: 'How much UBI offsets despair mortality from unemployment.',
+    rationale: 'Generous UBI nearly eliminates the income-driven part of despair. Not 1.0 because some despair is non-economic.',
+    range: [0.5, 1.0],
+  },
+  VIOLENCE_DEATH_SCALE: {
+    value: 0.013, group: 'mortality', label: 'Violence mortality scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality contribution per unit of (1 - polStability).',
+    rationale: 'At total political collapse, this represents ~13 added deaths per 1,000 from violence — the upper range of severe political instability in the model\'s parameter space.',
+    range: [0.005, 0.025],
+  },
+  ENV_DEATH_ALIGN_THRESHOLD: {
+    value: 0.5, group: 'mortality', label: 'Environmental death alignment threshold', unit: '',
+    class: 'Structural',
+    description: 'Alignment level above which environmental mortality is zero.',
+    rationale: 'Above 50% alignment, deployments are environmentally responsible enough that env_death drops to zero regardless of energy distribution.',
+    range: [0.3, 0.7],
+  },
+  ENV_DEATH_SCALE: {
+    value: 0.010, group: 'mortality', label: 'Environmental mortality scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality contribution from concentrated, low-alignment energy systems.',
+    rationale: 'Represents environmental mortality from concentrated, low-alignment energy systems — air pollution, industrial accidents, climate effects. Scale chosen to match order-of-magnitude estimates of environmental health burdens.',
+    range: [0.003, 0.020],
+  },
+  ALIGN_FAIL_CAP_THRESHOLD: {
+    value: 1.5, group: 'mortality', label: 'Alignment-failure capability threshold', unit: '×',
+    class: 'Structural',
+    description: 'Total capability above which alignment failures start contributing to mortality.',
+    rationale: 'Below 1.5 capability the deployments are too small to cause systemic harm. Above, alignment failures scale linearly. Threshold roughly matches "deployment at industrial scale."',
+    range: [0.5, 3.0],
+  },
+  ALIGN_FAIL_ALIGN_THRESHOLD: {
+    value: 0.4, group: 'mortality', label: 'Alignment-failure alignment threshold', unit: '',
+    class: 'Structural',
+    description: 'Alignment level above which alignment-failure mortality is zero.',
+    rationale: 'Above 40% alignment, failures are caught before causing mass harm. Below, capability * gap drives mortality.',
+    range: [0.2, 0.6],
+  },
+  ALIGN_FAIL_SCALE: {
+    value: 0.012, group: 'mortality', label: 'Alignment-failure mortality scale', unit: '/yr',
+    class: 'Structural',
+    description: 'Mortality coefficient on (capability − threshold) × (align threshold − align).',
+    rationale: 'At capability=5 and alignment=0.20, gives ~0.0042 mortality (≈3 yrs lost over 150). Models industrial-AI accidents at scale.',
+    range: [0.005, 0.025],
+  },
+  FOOD_INSEC_INCOME_THRESHOLD: {
+    value: 0.65, group: 'mortality', label: 'Food insecurity income threshold', unit: '',
+    class: 'Structural',
+    description: 'Income below which food insecurity contributes to mortality.',
+    rationale: 'Same as poverty threshold; food insecurity is a sub-component of poverty mortality.',
+    range: [0.4, 0.85],
+  },
+  FOOD_INSEC_AGRI_THRESHOLD: {
+    value: 1.2, group: 'mortality', label: 'Food insecurity agriculture threshold', unit: '×',
+    class: 'Structural',
+    description: 'Agricultural endowment above which food insecurity is zero.',
+    rationale: 'Above 1.2 (food-surplus blocs), no food insecurity regardless of income.',
+    range: [0.8, 1.5],
+  },
+  FOOD_INSEC_SCALE: {
+    value: 0.012, group: 'mortality', label: 'Food insecurity mortality scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality coefficient on (poverty deficit) × (agri deficit).',
+    rationale: 'Joint poverty + low-agriculture conditions produce a noticeable but bounded mortality contribution from food insecurity.',
+    range: [0.005, 0.025],
+  },
+  STAT_CRED_THRESHOLD: {
+    value: 0.30, group: 'mortality', label: 'Stat-credibility threshold', unit: '',
+    class: 'Structural',
+    description: 'Political responsiveness below which mortality is systematically underreported.',
+    rationale: 'In the model, blocs with very low political responsiveness are assumed to underreport sensitive mortality. Above this threshold, independent press and civil society provide enough cross-checks for credible tracking.',
+    range: [0.1, 0.5],
+  },
+  STAT_CRED_SCALE: {
+    value: 0.008, group: 'mortality', label: 'Stat-credibility penalty scale', unit: '/yr',
+    class: 'Calibrated',
+    description: 'Mortality penalty for low political responsiveness representing underreported deaths.',
+    rationale: 'At full opacity (politicalResp=0), adds ~0.0024 to mortality rate, ≈2 yrs lost. Represents the gap between official mortality figures and credible third-party estimates in low-transparency settings.',
+    range: [0, 0.020],
+  },
+  DRIVER_CAP: {
+    value: 0.027, group: 'mortality', label: 'Mortality-driver smoothing cap', unit: '/yr',
+    class: 'Structural',
+    description: 'Soft cap on the sum of all mortality drivers, applied via 1−exp damping.',
+    rationale: 'Prevents runaway mortality stacking. Even in the worst case, total driver contribution caps at this value (≈30% of life lost to non-base causes).',
+    range: [0.015, 0.050],
+  },
+  MORT_FLOOR: {
+    value: 0.005, group: 'mortality', label: 'Total mortality floor', unit: '/yr',
+    class: 'Structural',
+    description: 'Hard minimum on per-year mortality rate.',
+    rationale: 'Even with optimal medical dividend, mortality cannot drop below this. Corresponds to life expectancy ≈ 200 yrs, an obvious biological bound.',
+    range: [0.001, 0.010],
+  },
+
+  // ─── War ───
+  WAR_T_MIN: {
+    value: 15, group: 'war', label: 'War-eligible turn threshold', unit: 'yrs',
+    class: 'Structural',
+    description: 'Number of years before any war can occur.',
+    rationale: 'Wars require some capability divergence and political development before triggering.',
+    range: [0, 50],
+  },
+  WAR_AGG_BASE_SCALE: {
+    value: 0.15, group: 'war', label: 'Aggression score scale', unit: '×',
+    class: 'Structural',
+    description: 'Base multiplier on the aggression formula.',
+    rationale: 'Tuned so that under default rules, the model produces a non-trivial but not constant rate of inter-bloc war.',
+    range: [0.05, 0.30],
+  },
+  WAR_PROB_SCALE: {
+    value: 0.04, group: 'war', label: 'War probability scale', unit: '×',
+    class: 'Calibrated',
+    description: 'Per-turn war probability scale: aggression × vulnerability × this.',
+    rationale: 'Tuned along with aggression scale to give a moderate war frequency in the model. Lower = more peaceful worlds; higher = constant conflict.',
+    range: [0.01, 0.10],
+  },
+  WAR_VULN_CAPGAP_FACTOR: {
+    value: 0.5, group: 'war', label: 'Capability-gap vulnerability weight', unit: '',
+    class: 'Structural',
+    description: 'How much a capability gap contributes to target vulnerability.',
+    rationale: 'In the model, capability disparity is the largest single contributor to a target\'s vulnerability.',
+    range: [0, 1],
+  },
+  WAR_VULN_POLSTAB_FACTOR: {
+    value: 0.4, group: 'war', label: 'Political-instability vulnerability weight', unit: '',
+    class: 'Structural',
+    description: 'How much weak political stability contributes to target vulnerability.',
+    rationale: 'Politically unstable blocs are more vulnerable to invasion in the model.',
+    range: [0, 1],
+  },
+  WAR_VULN_MINERAL_FACTOR: {
+    value: 0.3, group: 'war', label: 'Resource-wealth vulnerability weight', unit: '',
+    class: 'Structural',
+    description: 'How much resource value contributes to target vulnerability.',
+    rationale: 'Resource value contributes to invasion incentive in the model. Lower than the other two vulnerability factors because not every motivation is resource-driven.',
+    range: [0, 1],
+  },
+  WAR_TARGET_MORTALITY: {
+    value: 0.045, group: 'war', label: 'War mortality (target, peak intensity)', unit: '/yr',
+    class: 'Structural',
+    description: 'Mortality rate added to target during a war turn at intensity=1.0.',
+    rationale: 'At peak intensity (1.0), 4.5% mortality represents a very severe single-year war episode in the model. Real wars typically distribute mortality over many years; the one-turn duration in this simulator concentrates that effect into a single time step. Behind these numbers are real human lives — they are not a measure of "damage" lightly chosen.',
+    range: [0.01, 0.10],
+  },
+  WAR_AGG_MORTALITY: {
+    value: 0.010, group: 'war', label: 'War mortality (aggressor, peak intensity)', unit: '/yr',
+    class: 'Structural',
+    description: 'Mortality rate added to aggressor during a war turn at intensity=1.0.',
+    rationale: 'Represents military casualties for the aggressor at peak intensity. Lower than target mortality because the aggressor primarily loses combatants rather than civilian populations — though every casualty is a real loss.',
+    range: [0.002, 0.030],
+  },
+  WAR_TARGET_POL_FACTOR: {
+    value: 0.55, group: 'war', label: 'War damage to target political stability', unit: '×',
+    class: 'Structural',
+    description: 'Multiplicative reduction in polStability for target at intensity=1.0.',
+    rationale: 'Major war devastates political institutions in the model. A 55% drop at peak intensity reflects severe but bounded damage.',
+    range: [0.2, 0.9],
+  },
+  WAR_TARGET_INCOME_FACTOR: {
+    value: 0.30, group: 'war', label: 'War damage to target income', unit: '×',
+    class: 'Structural',
+    description: 'Multiplicative reduction in median income for target at intensity=1.0.',
+    rationale: 'Income falls substantially in major wars; a 30% drop at peak intensity sits in the mid-range of severe but not civilization-ending outcomes for the model.',
+    range: [0.1, 0.6],
+  },
+  WAR_TARGET_AICAP_FACTOR: {
+    value: 0.22, group: 'war', label: 'War damage to target capability', unit: '×',
+    class: 'Structural',
+    description: 'Multiplicative reduction in AI/robot capability for target at intensity=1.0.',
+    rationale: 'Infrastructure damage from war reduces tech capability but not as severely as income.',
+    range: [0.05, 0.5],
+  },
+  WAR_AGG_INCOME_BOOST: {
+    value: 0.08, group: 'war', label: 'War profiteering income boost (aggressor)', unit: '×',
+    class: 'Structural',
+    description: 'Multiplicative bonus to aggressor income from extraction during war.',
+    rationale: 'In the model, aggressors extract value from invasion despite costs — this is the income side of that extraction. Whether aggressor blocs come out ahead overall depends on how this trades off against other war costs.',
+    range: [0, 0.2],
+  },
+  WAR_AGG_CONC_BOOST: {
+    value: 0.06, group: 'war', label: 'Capital concentration boost (aggressor)', unit: '+',
+    class: 'Structural',
+    description: 'Capital concentration increment for aggressor (war-industrial complex).',
+    rationale: 'Wars concentrate wealth via military-industrial procurement. Additive bump.',
+    range: [0, 0.15],
+  },
+
+  // ─── Coercion (sub-war pressure) ───
+  COERCION_PROB: {
+    value: 0.03, group: 'coercion', label: 'Coercion event probability per year', unit: '/yr',
+    class: 'Structural',
+    description: 'Per-turn probability of a coercion event when capability gaps are large.',
+    rationale: 'Low base rate gives ~3-5 coercion events per 150 years.',
+    range: [0, 0.10],
+  },
+  COERCION_GAP_THRESHOLD: {
+    value: 0.4, group: 'coercion', label: 'Coercion capability gap threshold', unit: '×',
+    class: 'Structural',
+    description: 'Minimum capability gap between blocs for coercion to trigger.',
+    rationale: 'Below this gap, coercion is unprofitable.',
+    range: [0.1, 1.0],
+  },
+
+  // ─── Inter-bloc flows ───
+  CAPITAL_FLOW_BASE: {
+    value: 0.04, group: 'flows', label: 'Capital flow base rate', unit: '×',
+    class: 'Structural',
+    description: 'Multiplier on tax-differential-driven capital movement.',
+    rationale: 'Tuned so that large tax differentials produce visible but not overwhelming flows.',
+    range: [0.01, 0.10],
+  },
+  CAPITAL_FLOW_MAX: {
+    value: 0.05, group: 'flows', label: 'Capital flow max per turn per pair', unit: '',
+    class: 'Structural',
+    description: 'Hard cap on capital flow per source-destination pair per turn.',
+    rationale: 'Prevents runaway flows; ~5% per pair per turn keeps the model\'s capital reallocation in a moderate range.',
+    range: [0.01, 0.20],
+  },
+  TALENT_FLOW_BASE: {
+    value: 0.003, group: 'flows', label: 'Talent flow base rate', unit: '×',
+    class: 'Structural',
+    description: 'Multiplier on push×pull gradient for migration.',
+    rationale: 'Lower than capital because people move more slowly than money. Tuned to produce moderate cross-bloc migration patterns.',
+    range: [0.001, 0.010],
+  },
+  TALENT_FLOW_MAX: {
+    value: 0.02, group: 'flows', label: 'Talent flow max per turn per pair', unit: '',
+    class: 'Structural',
+    description: 'Hard cap on talent flow per pair per turn.',
+    rationale: 'A 2% cap per turn per pair keeps migration in a moderate range relative to the model\'s population units.',
+    range: [0.005, 0.05],
+  },
+  SPILLOVER_LEAKAGE_BASE: {
+    value: 0.005, group: 'flows', label: 'Capability spillover base rate', unit: '×',
+    class: 'Structural',
+    description: 'Per-turn fraction of capability gap that leaks across borders.',
+    rationale: 'Modulated by source alignment. Set to a low rate (~0.5%/yr) so capability spreads gradually rather than equilibrating instantly.',
+    range: [0.001, 0.020],
+  },
+
+  // ─── Crisis dynamics ───
+  CRISIS_THRESHOLD: {
+    value: 0.40, group: 'crisis', label: 'Crisis triggering polStability threshold', unit: '',
+    class: 'Structural',
+    description: 'Political stability below which random crises start triggering.',
+    rationale: 'Below 40% stability, regimes are vulnerable to acute crises.',
+    range: [0.2, 0.6],
+  },
+  CRISIS_PROB: {
+    value: 0.10, group: 'crisis', label: 'Crisis probability when below threshold', unit: '/yr',
+    class: 'Structural',
+    description: 'Per-turn probability of a discrete political crisis when polStability < CRISIS_THRESHOLD.',
+    rationale: 'In the model, blocs experiencing serious political instability have ~10% annual probability of a discrete crisis event.',
+    range: [0.02, 0.30],
+  },
+  CATASTROPHE_PROB: {
+    value: 0.008, group: 'crisis', label: 'Catastrophe probability per year', unit: '/yr',
+    class: 'Structural',
+    description: 'Independent low-probability rare event (regime collapse, natural disaster).',
+    rationale: '~1 catastrophe per 125 years per bloc — a low but non-zero rate of acute large-scale events in the model.',
+    range: [0, 0.03],
+  },
+  CRISIS_SCAR_DECAY: {
+    value: 0.985, group: 'crisis', label: 'Crisis scar decay per year', unit: '×',
+    class: 'Structural',
+    description: 'Multiplicative decay of accumulated crisis scar each turn.',
+    rationale: 'Half-life ≈ 46 years. Models the long-tail effect of major political disruptions: their impact persists across generations rather than resetting cleanly.',
+    range: [0.95, 0.999],
+  },
+};
+
+// Convenience: extract default values for use as the K parameter
+const DEFAULT_CONSTANTS = Object.fromEntries(
+  Object.entries(CONSTANT_DEFS).map(([k, def]) => [k, def.value])
+);
+const CONSTANT_GROUPS = {
+  capability: { label: 'Capability dynamics', color: '#ff006e', icon: '⚡' },
+  dividends: { label: 'Capability dividends', color: '#06ffa5', icon: '✦' },
+  shocks: { label: 'External shocks', color: '#ff8500', icon: '⚠' },
+  mortality: { label: 'Mortality drivers', color: '#c77dff', icon: '☠' },
+  war: { label: 'War effects', color: '#ff006e', icon: '⚔' },
+  coercion: { label: 'Coercion (sub-war)', color: '#ff8500', icon: '◉' },
+  flows: { label: 'Inter-bloc flows', color: '#00f0ff', icon: '↔' },
+  crisis: { label: 'Crisis dynamics', color: '#ffbe0b', icon: '⚡' },
+};
+
 // ─── PRNG ─────────────────────────────────────────────────────────
 function mulberry32(a) {
   return function () {
@@ -311,17 +723,17 @@ function mulberry32(a) {
   };
 }
 
-function statCredibilityPenalty(n) {
-  return Math.max(0, 0.30 - n.politicalResp) * 0.008;
+function statCredibilityPenalty(n, K = DEFAULT_CONSTANTS) {
+  return Math.max(0, K.STAT_CRED_THRESHOLD - n.politicalResp) * K.STAT_CRED_SCALE;
 }
 
 // ─── Single-bloc step ────────────────────────────────────
-function stepBloc(j, t, rng, ext) {
+function stepBloc(j, t, rng, ext, K = DEFAULT_CONSTANTS) {
   const n = j.n;
-  const AI_CEILING = 4.0 * j.endowments.energy;
-  const ROBOT_CEILING = 3.0 * j.endowments.chips;
-  const aiR = n.aiGrowth * 0.06 * (1 - 0.5 * n.alignment);
-  const robotR = n.robotGrowth * 0.04 * (1 - 0.5 * n.alignment);
+  const AI_CEILING = K.AI_CEILING_FACTOR * j.endowments.energy;
+  const ROBOT_CEILING = K.ROBOT_CEILING_FACTOR * j.endowments.chips;
+  const aiR = n.aiGrowth * K.AI_GROWTH_BASE * (1 - K.ALIGNMENT_GROWTH_DRAG * n.alignment);
+  const robotR = n.robotGrowth * K.ROBOT_GROWTH_BASE * (1 - K.ALIGNMENT_GROWTH_DRAG * n.alignment);
   j.aiCap += j.aiCap * aiR * (1 - j.aiCap / AI_CEILING) * (1 + 0.5 * (rng() - 0.5));
   j.robotCap += j.robotCap * robotR * (1 - j.robotCap / ROBOT_CEILING) * (1 + 0.5 * (rng() - 0.5));
   j.aiCap += ext.aiCap_boost || 0;
@@ -339,7 +751,7 @@ function stepBloc(j, t, rng, ext) {
   }
   const totalCap = j.aiCap + j.robotCap;
   let macroShock = 0;
-  if (rng() < 0.030) {
+  if (rng() < K.SHOCK_PROB) {
     macroShock = 0.10 + rng() * 0.25;
     j.events.push({ turn: t, type: 'shock', description: `External shock — ${(macroShock * 100).toFixed(0)}% hit` });
   }
@@ -347,15 +759,15 @@ function stepBloc(j, t, rng, ext) {
 
   // Food shock — hits low-agriculture-endowment blocs harder
   const foodVuln = Math.max(0, 0.85 - j.endowments.agriculture) * 0.5;
-  if (rng() < (0.015 + foodVuln * 0.04)) {
+  if (rng() < (K.FOOD_SHOCK_BASE_PROB + foodVuln * 0.04)) {
     const foodShock = 0.05 + rng() * 0.15;
     macroShock += foodShock;
     j.events.push({ turn: t, type: 'food_crisis', description: `Food crisis — ${(foodShock * 100).toFixed(0)}% shock` });
   }
 
-  const shareToSociety = (1 - j.capitalConc * 0.7) * (0.3 + 0.7 * n.alignment) * j.institutionalCapacity;
-  const medicalDividend = totalCap * 0.30 * shareToSociety;
-  const productivityDividend = totalCap * 0.40 * shareToSociety;
+  const shareToSociety = (1 - j.capitalConc * K.SHARE_TO_SOCIETY_CONC_DRAG) * (0.3 + 0.7 * n.alignment) * j.institutionalCapacity;
+  const medicalDividend = totalCap * K.MEDICAL_DIVIDEND_FACTOR * shareToSociety;
+  const productivityDividend = totalCap * K.PRODUCTIVITY_DIVIDEND_FACTOR * shareToSociety;
   const capabilityPressure = Math.tanh(totalCap / 2.5);
   const rawDisplacement = capabilityPressure * 0.55;
   const retrainingMit = n.retraining * 0.30;
@@ -401,19 +813,19 @@ function stepBloc(j, t, rng, ext) {
   else if (j.polStability > 0.65) bistablePull = 0.02 * Math.sqrt(j.polStability - 0.65);
   j.polStability = 0.70 * j.polStability + 0.30 * targetStability + bistablePull + (rng() - 0.5) * 0.04;
   j.polStability = Math.max(0, Math.min(1, j.polStability));
-  if (j.polStability < 0.40 && rng() < 0.10) {
+  if (j.polStability < K.CRISIS_THRESHOLD && rng() < K.CRISIS_PROB) {
     const sev = 0.5 + rng() * 0.30;
     j.polStability *= sev;
     j.crisisScar += 0.10;
     j.events.push({ turn: t, type: 'crisis', description: `Political crisis — stability dropped ${((1 - sev) * 100).toFixed(0)}%` });
   }
-  if (rng() < 0.008) {
+  if (rng() < K.CATASTROPHE_PROB) {
     j.polStability *= 0.4 + rng() * 0.3;
     j.unemployment = Math.min(0.55, j.unemployment + 0.10);
     j.crisisScar += 0.20;
     j.events.push({ turn: t, type: 'catastrophe', description: 'Acute crisis — war or regime collapse' });
   }
-  j.crisisScar *= 0.985;
+  j.crisisScar *= K.CRISIS_SCAR_DECAY;
   if (j.polStability < 0.40) j.institutionalCapacity *= 0.99;
   else if (j.polStability > 0.60 && j.institutionalCapacity < 1.0) j.institutionalCapacity = Math.min(1.0, j.institutionalCapacity * 1.005);
   j.institutionalCapacity = Math.max(0.3, j.institutionalCapacity);
@@ -423,13 +835,13 @@ function stepBloc(j, t, rng, ext) {
   let warMortality = 0;
   if (ext.warAsTarget) {
     const w = ext.warAsTarget;
-    j.polStability *= (1 - w.intensity * 0.55);
-    j.medianIncome *= (1 - w.intensity * 0.30);
-    j.aiCap *= (1 - w.intensity * 0.22);
-    j.robotCap *= (1 - w.intensity * 0.22);
+    j.polStability *= (1 - w.intensity * K.WAR_TARGET_POL_FACTOR);
+    j.medianIncome *= (1 - w.intensity * K.WAR_TARGET_INCOME_FACTOR);
+    j.aiCap *= (1 - w.intensity * K.WAR_TARGET_AICAP_FACTOR);
+    j.robotCap *= (1 - w.intensity * K.WAR_TARGET_AICAP_FACTOR);
     j.institutionalCapacity *= (1 - w.intensity * 0.15);
     j.crisisScar += w.intensity * 0.45;
-    warMortality = w.intensity * 0.045;
+    warMortality = w.intensity * K.WAR_TARGET_MORTALITY;
     j.unemployment = Math.min(0.55, j.unemployment + w.intensity * 0.15);
     j.events.push({ turn: t, type: 'war_target', description: `Invaded by ${BLOCS[w.aggressor].name} — ${(w.intensity * 100).toFixed(0)}% war damage` });
   }
@@ -437,10 +849,10 @@ function stepBloc(j, t, rng, ext) {
     const w = ext.warAsAggressor;
     j.polStability *= (1 - w.intensity * 0.10);
     j.aiCap *= (1 - w.intensity * 0.05);
-    j.medianIncome *= (1 + w.intensity * 0.08);
-    j.capitalConc = Math.min(0.97, j.capitalConc + w.intensity * 0.06);
+    j.medianIncome *= (1 + w.intensity * K.WAR_AGG_INCOME_BOOST);
+    j.capitalConc = Math.min(0.97, j.capitalConc + w.intensity * K.WAR_AGG_CONC_BOOST);
     j.crisisScar += w.intensity * 0.10;
-    warMortality = w.intensity * 0.010;
+    warMortality = w.intensity * K.WAR_AGG_MORTALITY;
     j.events.push({ turn: t, type: 'war_aggressor', description: `Invaded ${BLOCS[w.target].name} — extraction gains, military costs` });
   }
   // Re-clamp after war shocks
@@ -450,18 +862,18 @@ function stepBloc(j, t, rng, ext) {
   j.robotCap = Math.max(0.01, j.robotCap);
   j.institutionalCapacity = Math.max(0.3, j.institutionalCapacity);
 
-  const baseDeath = 0.0125;
-  const medicalOffset = -Math.min(0.004, medicalDividend * 0.0015);
-  const povertyDeath = Math.max(0, 0.65 - j.medianIncome) * 0.012;
-  const despairDeath = j.unemployment * Math.max(0, 1 - n.ubiLevel * 0.95) * 0.006;
-  const violenceDeath = Math.max(0, 1 - j.polStability) * 0.013;
-  const envDeath = (1 - n.energyDist) * Math.max(0, 0.5 - n.alignment) * 0.010;
-  const alignmentFailDeath = Math.max(0, totalCap - 1.5) * Math.max(0, 0.4 - n.alignment) * 0.012;
-  const foodInsec = Math.max(0, 0.65 - j.medianIncome) * Math.max(0, 1.2 - j.endowments.agriculture) * 0.012;
-  const unreported = statCredibilityPenalty(n);
+  const baseDeath = K.BASE_DEATH;
+  const medicalOffset = -Math.min(K.MEDICAL_OFFSET_CAP, medicalDividend * 0.0015);
+  const povertyDeath = Math.max(0, K.POVERTY_THRESHOLD - j.medianIncome) * K.POVERTY_DEATH_SCALE;
+  const despairDeath = j.unemployment * Math.max(0, 1 - n.ubiLevel * K.DESPAIR_UBI_DAMP) * K.DESPAIR_DEATH_SCALE;
+  const violenceDeath = Math.max(0, 1 - j.polStability) * K.VIOLENCE_DEATH_SCALE;
+  const envDeath = (1 - n.energyDist) * Math.max(0, K.ENV_DEATH_ALIGN_THRESHOLD - n.alignment) * K.ENV_DEATH_SCALE;
+  const alignmentFailDeath = Math.max(0, totalCap - K.ALIGN_FAIL_CAP_THRESHOLD) * Math.max(0, K.ALIGN_FAIL_ALIGN_THRESHOLD - n.alignment) * K.ALIGN_FAIL_SCALE;
+  const foodInsec = Math.max(0, K.FOOD_INSEC_INCOME_THRESHOLD - j.medianIncome) * Math.max(0, K.FOOD_INSEC_AGRI_THRESHOLD - j.endowments.agriculture) * K.FOOD_INSEC_SCALE;
+  const unreported = statCredibilityPenalty(n, K);
   const rawDriverSum = povertyDeath + despairDeath + violenceDeath + envDeath + alignmentFailDeath + foodInsec;
-  const cappedDriverSum = 0.027 * (1 - Math.exp(-rawDriverSum / 0.027));
-  const mortRate = Math.max(0.005, baseDeath + medicalOffset + cappedDriverSum + unreported + warMortality);
+  const cappedDriverSum = K.DRIVER_CAP * (1 - Math.exp(-rawDriverSum / K.DRIVER_CAP));
+  const mortRate = Math.max(K.MORT_FLOOR, baseDeath + medicalOffset + cappedDriverSum + unreported + warMortality);
   j.cumulativeMortality += mortRate;
   j.history.push({
     turn: t, aiCap: +j.aiCap.toFixed(3), robotCap: +j.robotCap.toFixed(3),
@@ -473,7 +885,7 @@ function stepBloc(j, t, rng, ext) {
   });
 }
 
-function computeInteractions(blocs, t, rng, worldEvents) {
+function computeInteractions(blocs, t, rng, worldEvents, K = DEFAULT_CONSTANTS) {
   const inputs = {};
   for (const k of BLOC_KEYS) inputs[k] = { capital_flow: 0, talent_flow: 0, aiCap_boost: 0, robotCap_boost: 0, shock_modifier: 0, warAsTarget: null, warAsAggressor: null };
   for (const src of BLOC_KEYS) {
@@ -487,9 +899,9 @@ function computeInteractions(blocs, t, rng, worldEvents) {
       const opennessDst = 0.3 + 0.7 * jDst.n.energyDist;
       const stabFactor = (1 - jSrc.polStability) * 0.5 + 0.5;
       const resourcePull = 1.0 + Math.max(0, jDst.endowments.minerals - 1.0) * 0.4;
-      let flow = (taxDiff * 0.4 + wealthDiff * 0.3) * 0.04 * opennessSrc * opennessDst * stabFactor * resourcePull;
+      let flow = (taxDiff * 0.4 + wealthDiff * 0.3) * K.CAPITAL_FLOW_BASE * opennessSrc * opennessDst * stabFactor * resourcePull;
       flow *= jSrc.aiCap / Math.max(0.5, jDst.aiCap);
-      flow = Math.max(0, Math.min(0.05, flow));
+      flow = Math.max(0, Math.min(K.CAPITAL_FLOW_MAX, flow));
       inputs[src].capital_flow -= flow;
       inputs[dst].capital_flow += flow;
     }
@@ -503,8 +915,8 @@ function computeInteractions(blocs, t, rng, worldEvents) {
       const friction = 1 - jSrc.n.politicalResp * 0.5;
       let reception = 1 - Math.max(0, jDst.unemployment - 0.20) * 2;
       reception = Math.max(0.1, Math.min(1.0, reception));
-      let flow = push * pull * 0.003 * (1 - friction * 0.5) * reception;
-      flow = Math.max(0, Math.min(0.02, flow));
+      let flow = push * pull * K.TALENT_FLOW_BASE * (1 - friction * 0.5) * reception;
+      flow = Math.max(0, Math.min(K.TALENT_FLOW_MAX, flow));
       inputs[src].talent_flow -= flow;
       inputs[dst].talent_flow += flow;
     }
@@ -515,13 +927,13 @@ function computeInteractions(blocs, t, rng, worldEvents) {
       const jSrc = blocs[src], jDst = blocs[dst];
       const capDiffAi = Math.max(0, jSrc.aiCap - jDst.aiCap);
       const capDiffRobot = Math.max(0, jSrc.robotCap - jDst.robotCap);
-      const leakage = (1 - jSrc.n.alignment * 0.3) * 0.005;
+      const leakage = (1 - jSrc.n.alignment * 0.3) * K.SPILLOVER_LEAKAGE_BASE;
       const absorption = 0.5 + jDst.n.retraining * 0.5;
       inputs[dst].aiCap_boost += capDiffAi * leakage * absorption;
       inputs[dst].robotCap_boost += capDiffRobot * leakage * absorption;
     }
   }
-  if (rng() < 0.03 && t > 20) {
+  if (rng() < K.COERCION_PROB && t > 20) {
     const pairs = [];
     for (let i = 0; i < BLOC_KEYS.length; i++) for (let j = i + 1; j < BLOC_KEYS.length; j++) pairs.push([BLOC_KEYS[i], BLOC_KEYS[j]]);
     let maxGap = 0, bestPair = null;
@@ -529,7 +941,7 @@ function computeInteractions(blocs, t, rng, worldEvents) {
       const gap = Math.abs(blocs[a].aiCap - blocs[b].aiCap);
       if (gap > maxGap) { maxGap = gap; bestPair = [a, b]; }
     }
-    if (bestPair && maxGap > 0.4) {
+    if (bestPair && maxGap > K.COERCION_GAP_THRESHOLD) {
       const [a, b] = bestPair;
       const aggScore = (j) => j.aiCap * (1 - j.n.alignment);
       const aggressor = aggScore(blocs[a]) > aggScore(blocs[b]) ? a : b;
@@ -544,27 +956,23 @@ function computeInteractions(blocs, t, rng, worldEvents) {
   }
 
   // ── WAR ── Authoritarian + capable regimes can invade weak neighbors.
-  // Distinct from coercion: real territorial / resource extraction with mortality.
-  // Even Open Market is invadable when weakened (low polStability + capability lag).
-  if (t > 15) {
+  if (t > K.WAR_T_MIN) {
     let bestWarProb = 0, bestWarPair = null, bestIntensityCap = 0;
     for (const src of BLOC_KEYS) {
       for (const dst of BLOC_KEYS) {
         if (src === dst) continue;
         const jSrc = blocs[src], jDst = blocs[dst];
-        // Aggression score: requires capability + chip base + low alignment + low political accountability + intact institutions
         const aggression = jSrc.aiCap
                          * (1 - jSrc.n.alignment)
                          * (1 - jSrc.n.politicalResp)
                          * jSrc.endowments.chips
                          * jSrc.institutionalCapacity
-                         * 0.15;
-        // Target vulnerability: capability gap, weak polity, or resource value worth taking
+                         * K.WAR_AGG_BASE_SCALE;
         const capGap = Math.max(0, 1 - jDst.aiCap / Math.max(0.5, jSrc.aiCap));
-        const targetVuln = capGap * 0.5
-                         + Math.max(0, 0.6 - jDst.polStability) * 0.4
-                         + Math.max(0, jDst.endowments.minerals - 0.8) * 0.3;
-        const warProb = aggression * targetVuln * 0.04;
+        const targetVuln = capGap * K.WAR_VULN_CAPGAP_FACTOR
+                         + Math.max(0, 0.6 - jDst.polStability) * K.WAR_VULN_POLSTAB_FACTOR
+                         + Math.max(0, jDst.endowments.minerals - 0.8) * K.WAR_VULN_MINERAL_FACTOR;
+        const warProb = aggression * targetVuln * K.WAR_PROB_SCALE;
         if (warProb > bestWarProb) {
           bestWarProb = warProb;
           bestWarPair = { src, dst };
@@ -586,7 +994,7 @@ function computeInteractions(blocs, t, rng, worldEvents) {
   return inputs;
 }
 
-function runWorld(allRules, seed) {
+function runWorld(allRules, seed, K = DEFAULT_CONSTANTS) {
   const rng = mulberry32(seed);
   const NUM_TURNS = 150;
   const blocs = {};
@@ -610,8 +1018,8 @@ function runWorld(allRules, seed) {
   }
   const worldEvents = [];
   for (let t = 1; t <= NUM_TURNS; t++) {
-    const inputs = computeInteractions(blocs, t, rng, worldEvents);
-    for (const k of BLOC_KEYS) stepBloc(blocs[k], t, rng, inputs[k]);
+    const inputs = computeInteractions(blocs, t, rng, worldEvents, K);
+    for (const k of BLOC_KEYS) stepBloc(blocs[k], t, rng, inputs[k], K);
   }
   const outcomes = {};
   for (const k of BLOC_KEYS) {
@@ -664,10 +1072,10 @@ function stripHistory(world) {
 }
 
 // Async chunked batch runner that yields to the UI between chunks for progress updates
-async function runWorldBatchAsync(allRules, n, seedBase = 1000, onProgress) {
+async function runWorldBatchAsync(allRules, n, seedBase = 1000, onProgress, K = DEFAULT_CONSTANTS) {
   const results = [];
   // First world keeps full history — used as the exemplar in World view
-  const exemplar = runWorld(allRules, seedBase);
+  const exemplar = runWorld(allRules, seedBase, K);
   results.push(exemplar);
   if (onProgress) onProgress(1, n);
   // Yield to UI
@@ -677,7 +1085,7 @@ async function runWorldBatchAsync(allRules, n, seedBase = 1000, onProgress) {
   for (let i = 1; i < n; i += chunkSize) {
     const end = Math.min(i + chunkSize, n);
     for (let j = i; j < end; j++) {
-      results.push(stripHistory(runWorld(allRules, seedBase + j * 7919)));
+      results.push(stripHistory(runWorld(allRules, seedBase + j * 7919, K)));
     }
     if (onProgress) onProgress(end, n);
     await new Promise(r => setTimeout(r, 0));
@@ -686,10 +1094,10 @@ async function runWorldBatchAsync(allRules, n, seedBase = 1000, onProgress) {
 }
 
 // Synchronous version retained for any caller that doesn't need progress
-function runWorldBatch(allRules, n, seedBase = 1000) {
+function runWorldBatch(allRules, n, seedBase = 1000, K = DEFAULT_CONSTANTS) {
   const results = [];
   for (let i = 0; i < n; i++) {
-    const w = runWorld(allRules, seedBase + i * 7919);
+    const w = runWorld(allRules, seedBase + i * 7919, K);
     results.push(i === 0 ? w : stripHistory(w));
   }
   return results;
@@ -817,6 +1225,7 @@ export default function App() {
     for (const k of BLOC_KEYS) r[k] = { ...BLOCS[k].rules };
     return r;
   });
+  const [customConstants, setCustomConstants] = useState(DEFAULT_CONSTANTS);
   const [scenarioName, setScenarioName] = useState('Default presets');
   const [activeBloc, setActiveBloc] = useState('OM');
   const [tab, setTab] = useState('setup');
@@ -834,6 +1243,23 @@ export default function App() {
     }
     return false;
   }, [allRules]);
+
+  const isConstantsModified = useMemo(() => {
+    for (const k of Object.keys(DEFAULT_CONSTANTS)) {
+      if (customConstants[k] !== DEFAULT_CONSTANTS[k]) return true;
+    }
+    return false;
+  }, [customConstants]);
+
+  const setConstant = (key, val) => {
+    setCustomConstants(prev => ({ ...prev, [key]: val }));
+    setSingleResult(null); setBatchResults(null);
+  };
+
+  const resetConstants = () => {
+    setCustomConstants(DEFAULT_CONSTANTS);
+    setSingleResult(null); setBatchResults(null);
+  };
 
   const setRule = (blocKey, ruleId, val) => {
     setAllRules(prev => ({ ...prev, [blocKey]: { ...prev[blocKey], [ruleId]: val } }));
@@ -859,7 +1285,7 @@ export default function App() {
     setBootSeq({ active: true, year: 0, progress: 0, total: 0, message: 'INITIALIZING WORLD...', mode: 'single' });
     requestAnimationFrame(() => {
       const seed = Math.floor(Math.random() * 100000);
-      const result = runWorld(allRules, seed);
+      const result = runWorld(allRules, seed, customConstants);
       let year = 0;
       const ticker = setInterval(() => {
         year += 6;
@@ -887,7 +1313,7 @@ export default function App() {
     await new Promise(r => requestAnimationFrame(r));
     const result = await runWorldBatchAsync(allRules, n, 1000, (done, total) => {
       setBootSeq(prev => ({ ...prev, progress: done, total, message: `WORLDS · ${done} / ${total}` }));
-    });
+    }, customConstants);
     setBootSeq(prev => ({ ...prev, message: 'AGGREGATING DISTRIBUTIONS...' }));
     await new Promise(r => setTimeout(r, 200));
     setBootSeq({ active: false, year: 0, progress: 0, total: 0, message: '', mode: 'batch' });
@@ -911,7 +1337,13 @@ export default function App() {
   };
 
   const exportRules = () => {
-    const data = { name: scenarioName, allRules, exportedAt: new Date().toISOString(), version: '0.5' };
+    const data = {
+      name: scenarioName,
+      allRules,
+      customConstants: isConstantsModified ? customConstants : undefined,
+      exportedAt: new Date().toISOString(),
+      version: '0.6',
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -938,6 +1370,17 @@ export default function App() {
             }
           }
           setAllRules(validated);
+          // Constants — accept any that exist in CONSTANT_DEFS and are numeric, fall back to default otherwise
+          if (data.customConstants && typeof data.customConstants === 'object') {
+            const next = { ...DEFAULT_CONSTANTS };
+            for (const k of Object.keys(DEFAULT_CONSTANTS)) {
+              const v = data.customConstants[k];
+              if (typeof v === 'number' && isFinite(v)) next[k] = v;
+            }
+            setCustomConstants(next);
+          } else {
+            setCustomConstants(DEFAULT_CONSTANTS);
+          }
           setScenarioName(data.name || 'Imported scenario');
           setSingleResult(null); setBatchResults(null);
         } else alert('Invalid scenario file');
@@ -999,14 +1442,15 @@ export default function App() {
           {!(tab === 'manual' || tab === 'findings') && (
             <>
               <p className="text-muted text-sm max-w-3xl mb-2 crt" style={{ fontSize: 16 }}>
-                ▶ Four blocs face the same AI shock. Capital flows between them, talent migrates, capabilities leak,
-                tensions erupt into coercion or war. Calibrated to real-world baselines: developed liberal ~76, coordinated welfare ~78, authoritarian ~71, fragmented periphery ~67.
+                ▶ Four institutional archetypes face the same AI shock. Capital flows between them, talent migrates, capabilities leak,
+                tensions erupt into coercion or war. Default rules produce distinct long-run trajectories — abstract by design, not predictions about any country.
               </p>
               <div className="flex items-center gap-2 flex-wrap">
                 <label className="text-faint crt uppercase" style={{ fontSize: 14, letterSpacing: '0.1em' }}>Scenario:</label>
                 <input type="text" value={scenarioName} onChange={e => setScenarioName(e.target.value)}
                   style={{ minWidth: '240px' }} />
-                {isModified && <span className="pill neon-soft" style={{ background: 'rgba(255,0,110,0.15)', color: '#ff006e' }}>MODIFIED</span>}
+                {isModified && <span className="pill neon-soft" style={{ background: 'rgba(255,0,110,0.15)', color: '#ff006e' }}>RULES MODIFIED</span>}
+                {isConstantsModified && <span className="pill neon-soft" style={{ background: 'rgba(255,133,0,0.15)', color: '#ff8500' }}>CONSTANTS MODIFIED</span>}
               </div>
             </>
           )}
@@ -1014,8 +1458,8 @@ export default function App() {
 
         {(tab === 'manual' || tab === 'findings') ? (
           <DocLayout tab={tab} setTab={setTab}>
-            {tab === 'manual' && <ManualView />}
-            {tab === 'findings' && <FindingsView applyScenario={applyScenario} />}
+            {tab === 'manual' && <ManualView customConstants={customConstants} setConstant={setConstant} resetConstants={resetConstants} isConstantsModified={isConstantsModified} />}
+            {tab === 'findings' && <FindingsView applyScenario={applyScenario} isConstantsModified={isConstantsModified} />}
           </DocLayout>
         ) : (
           <>
@@ -1094,6 +1538,17 @@ export default function App() {
 
                 <div className="mt-3">
                   {tab === 'setup' && <SetupView runSingle={runSingle} runBatch={runBatch_} running={running} />}
+                  {(tab === 'story' || tab === 'distribution' || tab === 'world') && isConstantsModified && (
+                    <div className="flex items-center gap-2 mb-3" style={{
+                      background: 'rgba(255,190,11,0.12)', border: '1px solid rgba(255,190,11,0.45)',
+                      padding: '8px 14px', borderRadius: 3, fontSize: 13, color: 'rgba(240,230,210,0.9)',
+                    }}>
+                      <AlertCircle size={14} style={{ color: '#ffbe0b', flexShrink: 0 }} />
+                      <span>
+                        <strong style={{ color: '#ffbe0b' }}>Custom constants active.</strong> These results reflect your edits to model parameters — the published calibration and validation no longer apply. See <button onClick={() => setTab('manual')} style={{ background: 'none', border: 'none', color: '#ff8500', textDecoration: 'underline', cursor: 'pointer', padding: 0, fontSize: 'inherit' }}>Manual → Constants</button> to review or reset.
+                      </span>
+                    </div>
+                  )}
                   {tab === 'story' && singleResult && <StoryView world={singleResult} />}
                   {tab === 'distribution' && batchResults && <DistributionView results={batchResults} scenarioName={scenarioName} />}
                   {tab === 'world' && (singleResult || batchResults) &&
@@ -1105,8 +1560,8 @@ export default function App() {
         )}
 
         <footer className="mt-8 pt-4 border-t crt text-faint text-center" style={{ borderColor: 'rgba(0,240,255,0.2)', fontSize: 14 }}>
-          ▷ Calibrated to real-world baselines. Directed Order and Mosaic figures stat-credibility adjusted.
-          All assumptions configurable via rules. The model code is the model claim.
+          ▷ Default parameters tuned for distinct, plausible archetype outcomes. Directed Order and Mosaic figures include a stat-credibility adjustment.
+          All assumptions configurable via rules and constants. The model code is the model claim.
         </footer>
       </div>
     </div>
@@ -1145,7 +1600,7 @@ function SetupView({ runSingle, runBatch, running }) {
       <div className="panel">
         <h2 className="pixel mb-2 neon-soft" style={{ color: '#ff006e', fontSize: 14 }}>FOUR BLOCS · ONE SHOCK</h2>
         <p className="text-muted leading-relaxed mb-3" style={{ fontSize: 13 }}>
-          Each bloc starts at its real-world calibrated baseline. The same AI capability shock affects all four.
+          Each bloc starts from its archetype's tuned baseline. The same AI capability shock affects all four.
           What differs is how their institutions respond — and how they affect each other through capital flows,
           talent migration, capability spillover, and occasional coercion.
         </p>
@@ -1547,10 +2002,12 @@ const MANUAL_PAGES = [
   { id: 'blocs', name: 'The Blocs', icon: Layers, color: '#00f0ff' },
   { id: 'levers', name: 'The Levers', icon: Sliders, color: '#06ffa5' },
   { id: 'dynamics', name: 'The Dynamics', icon: ArrowRightLeft, color: '#c77dff' },
-  { id: 'howto', name: 'How to Play', icon: Play, color: '#ffbe0b' },
+  { id: 'math', name: 'The Math', icon: FlaskConical, color: '#ffbe0b' },
+  { id: 'constants', name: 'Constants', icon: Sliders, color: '#ff8500' },
+  { id: 'howto', name: 'How to Play', icon: Play, color: '#06ffa5' },
 ];
 
-function ManualView() {
+function ManualView({ customConstants, setConstant, resetConstants, isConstantsModified }) {
   const [page, setPage] = useState('welcome');
   return (
     <div className="fade-in">
@@ -1579,6 +2036,8 @@ function ManualView() {
         {page === 'blocs' && <ManualBlocs />}
         {page === 'levers' && <ManualLevers />}
         {page === 'dynamics' && <ManualDynamics />}
+        {page === 'math' && <ManualMath />}
+        {page === 'constants' && <ManualConstants customConstants={customConstants} setConstant={setConstant} resetConstants={resetConstants} isConstantsModified={isConstantsModified} />}
         {page === 'howto' && <ManualHowTo />}
       </div>
     </div>
@@ -1589,22 +2048,51 @@ function ManualWelcome() {
   return (
     <div className="space-y-4 leading-relaxed" style={{ fontSize: 14 }}>
       <h2 className="pixel neon" style={{ color: '#ff006e', fontSize: 16, marginBottom: 8 }}>WELCOME TO LIFELINES</h2>
+
+      {/* Prominent disclaimer — always at the top */}
+      <div style={{
+        background: 'rgba(255,190,11,0.08)', border: '1px solid rgba(255,190,11,0.4)',
+        padding: '14px 18px', borderRadius: 4, marginBottom: 12,
+      }}>
+        <h3 className="pixel" style={{ color: '#ffbe0b', fontSize: 12, marginBottom: 8, letterSpacing: '0.05em' }}>
+          ▲ BEFORE YOU START — A FEW THINGS TO KEEP IN MIND
+        </h3>
+        <div className="space-y-3" style={{ fontSize: 13.5, color: 'rgba(240,230,210,0.9)', lineHeight: 1.6 }}>
+          <p>
+            <strong style={{ color: '#ffbe0b' }}>This is a simulation, not reality.</strong> The four blocs are abstract archetypes — not stand-ins for any country, region, religion, or culture. The numbers are stylized parameters chosen to make institutional dynamics visible, not predictions about how any real society will develop.
+          </p>
+          <p>
+            <strong style={{ color: '#ffbe0b' }}>War, death, and human suffering are not abstractions.</strong> The simulation includes them because no honest model of institutional choice under transformative technology can ignore them — but every "casualty" or "war intensity" in this tool represents real human lives that real people, real families, and real communities would lose. This is a thought experiment, not a game where high scores are celebrated. If something here makes you uncomfortable, that response is appropriate.
+          </p>
+          <p>
+            <strong style={{ color: '#ffbe0b' }}>People hold deeply different views about what makes a good society.</strong> Religious and secular, traditional and progressive, individualist and communitarian, faith-based and humanist — these are real disagreements about the meaning of life, what humans owe one another, and what the good is. They are not settled by any model, and especially not by this one. The simulation does not take a position on those questions. It examines a narrow technical question — given a set of rules and a capability shock, what dynamics emerge? — and every rule and parameter is editable. The model has no preferred answer.
+          </p>
+          <p>
+            Use this for thinking. Don't use it to prove points about real-world politics or to judge real-world communities.
+          </p>
+        </div>
+      </div>
+
       <p>
         LIFELINES is a stochastic political-economy simulator. Four institutional archetypes face a transformative AI capability shock and have 150 years to absorb it. Their internal rules — taxes, redistribution, alignment stringency, political responsiveness — determine whether they cohere or come apart. They also affect each other through capital flows, talent migration, capability spillover, coercion, and war.
       </p>
       <p>
-        The metric is <strong style={{ color: '#00f0ff' }}>median life expectancy</strong>. It integrates everything that matters: economic deprivation, political violence, environmental harm, alignment failure, war casualties. A society that produces miraculous capability while killing its people fails. So does one that protects everyone but freezes capability.
+        The metric is <strong style={{ color: '#00f0ff' }}>median life expectancy</strong>. It integrates economic deprivation, political violence, environmental harm, alignment failure, and war casualties into a single coarse number. It is not a complete measure of what makes a life valuable — only a stand-in for one important dimension of how a society treats its people.
       </p>
       <p>
-        This is a tool for thinking, not a forecast. Calibration is anchored to real-world baselines (developed liberal markets ≈ 76 yrs, coordinated welfare ≈ 78, authoritarian state ≈ 71, fragmented periphery ≈ 67), but the archetypes are deliberately abstract. The question this asks is <em>which institutional features matter under AI shock</em> — not which countries adopt them.
+        This is a tool for thinking, not a forecast. Default parameters are tuned so each archetype produces a distinct, plausible long-run outcome — not to claim any specific country lives that long under those rules. The question this simulation asks is <em>which institutional features tend to matter under capability shocks</em>, exploring relative dynamics rather than absolute predictions.
       </p>
       <h3 className="pixel" style={{ color: '#00f0ff', fontSize: 12, marginTop: 16 }}>WHY LIFE EXPECTANCY?</h3>
       <p>
-        Most political-economy debates argue past each other because each side measures different things. GDP rewards extraction. Inequality penalizes growth. Stability rewards repression. Life expectancy is hard to game: it integrates over decades, captures the deaths of people you didn't want to count, and is legible across political traditions. If your system produces longer healthier lives at scale, something is working. If it doesn't, no clever framing fixes that.
+        Most political-economy debates argue past each other because each side measures different things. GDP rewards extraction. Inequality penalizes growth. Stability rewards repression. Life expectancy is harder to game: it integrates over decades, captures the deaths of people who weren't being counted, and is legible across many traditions. It is not the only thing that matters — meaning, dignity, freedom, faith, community, beauty all matter too, and a model with a single scalar can't capture them. But a society that produces drastically shorter lives at scale is doing something seriously wrong, regardless of which framework you use to evaluate it. Life expectancy is the floor of accountability, not the ceiling of value.
       </p>
       <h3 className="pixel" style={{ color: '#00f0ff', fontSize: 12, marginTop: 16 }}>WHY STOCHASTIC?</h3>
       <p>
         Real institutional outcomes are path-dependent and shock-driven. A single deterministic run tells you nothing — change a seed, you get a different story. So LIFELINES runs many worlds with the same rules and shows you the distribution. You're not asking "what will happen?" — you're asking "across the space of possible histories, what fraction lead to which outcomes?"
+      </p>
+      <h3 className="pixel" style={{ color: '#00f0ff', fontSize: 12, marginTop: 16 }}>WHAT IS "VALIDATED" HERE?</h3>
+      <p>
+        The findings shown in the <strong style={{ color: '#06ffa5' }}>Findings</strong> section — calibration baselines, the 12 hypothesis-tested scenarios, the JS↔Python cross-validation, the convergence study — were all produced with the model's <strong style={{ color: '#ff8500' }}>default constants</strong> (listed in <em>Manual → Constants</em>). The Python validation suite shipped with the GitHub repo also tests against defaults. Constants are editable on the Constants page so that quantitative readers can probe the model's sensitivity to its own assumptions; once you change one, the published validation results no longer apply to your runs, and the app will show banners reminding you of that. This is by design: editing constants is how you challenge the model, not break it.
       </p>
     </div>
   );
@@ -1652,7 +2140,7 @@ function ManualBlocs() {
       </p>
       <h3 className="pixel" style={{ color: '#00f0ff', fontSize: 12, marginTop: 12 }}>STAT-CREDIBILITY ADJUSTMENT</h3>
       <p>
-        Blocs with very low political responsiveness (below 30 / 100) get a small ongoing mortality penalty representing systematic underreporting — deaths from despair, environmental harm, repression, and "deaths in custody" that don't show up in official statistics. This is calibrated, not punitive: it tracks the gap between authoritarian official figures and credible third-party estimates.
+        Blocs with very low political responsiveness (below 30 / 100) get a small ongoing mortality penalty representing systematic underreporting in the model — deaths from despair, environmental harm, repression, and similar causes that may not appear in official statistics from low-transparency settings. This is a structural feature of the simulation, not a judgment about any particular bloc or culture: it represents the gap between official figures and credible third-party estimates that tends to appear in low-transparency contexts.
       </p>
     </div>
   );
@@ -1756,6 +2244,313 @@ function ManualDynamics() {
   );
 }
 
+function ManualMath() {
+  // Helper for inline math snippets
+  const M = ({ children }) => <code style={{
+    fontFamily: 'VT323, monospace', fontSize: 16, color: '#ffbe0b',
+    background: 'rgba(255,190,11,0.08)', padding: '1px 6px', borderRadius: 2,
+  }}>{children}</code>;
+  // Block formula display
+  const F = ({ children }) => (
+    <div style={{
+      fontFamily: 'VT323, monospace', fontSize: 17, color: '#ffbe0b',
+      background: 'rgba(255,190,11,0.06)', border: '1px solid rgba(255,190,11,0.20)',
+      padding: '10px 14px', borderRadius: 3, margin: '8px 0',
+      lineHeight: 1.5, overflowX: 'auto',
+    }}>{children}</div>
+  );
+  const Section = ({ color, title, children }) => (
+    <section style={{ borderLeft: `2px solid ${color}40`, paddingLeft: 14, marginTop: 22 }}>
+      <h3 className="pixel" style={{ color, fontSize: 12, marginBottom: 6 }}>{title}</h3>
+      {children}
+    </section>
+  );
+  const Crit = ({ children }) => (
+    <div style={{ background: 'rgba(255,0,110,0.05)', border: '1px solid rgba(255,0,110,0.2)',
+      padding: '8px 12px', borderRadius: 3, fontSize: 13, marginTop: 8 }}>
+      <strong style={{ color: '#ff006e' }}>Objection: </strong>{children}
+    </div>
+  );
+
+  return (
+    <div className="space-y-2 leading-relaxed" style={{ fontSize: 14 }}>
+      <h2 className="pixel neon" style={{ color: '#ffbe0b', fontSize: 16, marginBottom: 8 }}>THE MATH</h2>
+      <p>
+        Every formula in the simulation, with the variables that feed it and what abstract phenomenon it represents in the model. All numeric constants referenced here (<M>K.NAME</M>) are listed in the <strong style={{ color: '#ff8500' }}>Constants</strong> sub-page with their values, classification (Empirical / Calibrated / Structural), and rationale. Critiques of any formula are welcome — open an issue on the GitHub repo or fork and modify.
+      </p>
+
+      <Section color="#ff006e" title="01 · CAPABILITY DYNAMICS">
+        <p>
+          Two capabilities — AI and robotics — grow logistically toward bloc-specific ceilings determined by energy and chip endowments. Tighter alignment slows growth.
+        </p>
+        <F>
+          dAI/dt = AI · n.aiGrowth · K.AI_GROWTH_BASE · (1 − K.ALIGNMENT_GROWTH_DRAG · n.alignment) · (1 − AI/AI_max)<br/>
+          AI_max = K.AI_CEILING_FACTOR · endowment.energy
+        </F>
+        <p>
+          Discrete jumps (representing breakthroughs) hit AI capability with probability ~4%/yr, robotics with ~2.5%/yr after year 20. The jump is uniform over [0.25, 0.70] for AI, [0.20, 0.55] for robotics.
+        </p>
+        <Crit>
+          Logistic growth is a coarse approximation; real capability growth has spurts and plateaus. The deterministic ceiling tied to energy/chips is a structural simplification — in reality, energy and chips are themselves AI-affected. The model ignores feedback from capability to its own ceiling.
+        </Crit>
+      </Section>
+
+      <Section color="#06ffa5" title="02 · CAPABILITY DIVIDENDS">
+        <p>
+          Total capability translates into medical and productivity dividends, conditional on three things: low capital concentration (so society sees the gains), high alignment (so deployment is responsible), and intact institutions (so the gains are distributed at all).
+        </p>
+        <F>
+          shareToSociety = (1 − concentration · K.SHARE_TO_SOCIETY_CONC_DRAG) · (0.3 + 0.7 · alignment) · institutionalCapacity<br/>
+          medicalDividend = (AI + Robot) · K.MEDICAL_DIVIDEND_FACTOR · shareToSociety<br/>
+          productivityDividend = (AI + Robot) · K.PRODUCTIVITY_DIVIDEND_FACTOR · shareToSociety
+        </F>
+        <Crit>
+          The "share to society" multiplier is a hard claim: high concentration and low alignment can both zero out dividends. Real dividends are partially delivered even under bad institutions (consumer goods leak through). The model is tuned to make institutions matter at the expense of moderating spillover.
+        </Crit>
+      </Section>
+
+      <Section color="#ffbe0b" title="03 · INCOME, UNEMPLOYMENT, INEQUALITY">
+        <p>
+          Capability creates labor displacement, partially offset by retraining, labor protections, and (for net inflows) capital availability. Capital concentration responds to taxes, redistribution, and capture penalties. Income blends labor income with UBI payouts and subtracts extraction.
+        </p>
+        <F>
+          targetUnemployment = max(0.03, displacement − retraining·0.30 − laborProt·0.10 − capInflow·0.08 + noise)<br/>
+          unemployment = 0.65·prev + 0.35·target + macroShock·0.30
+        </F>
+        <F>
+          taxForce = capitalTax·0.5 + wealthTax·0.4<br/>
+          captPenalty = max(0, conc − 0.7) · 1.5<br/>
+          redistCapacity = tanh(taxForce + distForce + politicalForce − captPenalty)<br/>
+          targetConc = baseConc · (1 − 0.65·redistCapacity)
+        </F>
+        <F>
+          income = laborIncome + UBI − extraction + capitalInflow<br/>
+          gini = 0.30 + conc·0.45 − capitalTax·0.12 − ubi·0.18 − energyDist·0.08 − wealthTax·0.10
+        </F>
+        <Crit>
+          The "capture penalty" — concentrated capital actively undermines redistribution above 0.7 — is structural. It means redistribution is monotone-helpful below the threshold and partially self-defeating above it. This is a strong bistability claim. Real economies show this dynamic but the threshold is fuzzy and time-varying.
+        </Crit>
+      </Section>
+
+      <Section color="#c77dff" title="04 · POLITICAL STABILITY">
+        <p>
+          Stress accumulates from unemployment, inequality, low income, capital concentration, recent shocks, and accumulated crisis scar. State capacity (political responsiveness × institutional capacity) damps it. Below 30% there's a downward bistable pull (failed states stay failed); above 65% there's a small upward pull.
+        </p>
+        <F>
+          stress = unemp·0.4 + max(0,gini−0.40)·0.55 + max(0,0.75−income)·0.5 + max(0,conc−0.70)·0.4 + shock·0.6 + scar·0.3<br/>
+          response = tanh((politicalResp·0.5 + energyDist·0.15) · institutionalCapacity · 1.5) · 0.6<br/>
+          targetStability = clamp[0,1](1 − stress + response)
+        </F>
+        <Crit>
+          The bistable regime (sub-30% as attractor) is a strong claim. It implies that recovery from collapse requires external shock or capability infusion, not just policy change. Empirical support exists but is contested.
+        </Crit>
+      </Section>
+
+      <Section color="#00f0ff" title="05 · MORTALITY (the score)">
+        <p>
+          Per-year mortality is a base rate plus a sum of drivers, capped softly to prevent runaway, plus war effects. Median life expectancy is the integral over 150 years.
+        </p>
+        <F>
+          baseDeath = K.BASE_DEATH<br/>
+          medicalOffset = − min(K.MEDICAL_OFFSET_CAP, medicalDividend · 0.0015)<br/>
+          povertyDeath = max(0, K.POVERTY_THRESHOLD − income) · K.POVERTY_DEATH_SCALE<br/>
+          despairDeath = unemp · max(0, 1 − ubi · K.DESPAIR_UBI_DAMP) · K.DESPAIR_DEATH_SCALE<br/>
+          violenceDeath = max(0, 1 − polStability) · K.VIOLENCE_DEATH_SCALE<br/>
+          envDeath = (1 − energyDist) · max(0, K.ENV_DEATH_ALIGN_THRESHOLD − align) · K.ENV_DEATH_SCALE<br/>
+          alignFailDeath = max(0, totalCap − K.ALIGN_FAIL_CAP_THRESHOLD) · max(0, K.ALIGN_FAIL_ALIGN_THRESHOLD − align) · K.ALIGN_FAIL_SCALE<br/>
+          foodInsec = max(0, K.FOOD_INSEC_INCOME_THRESHOLD − income) · max(0, K.FOOD_INSEC_AGRI_THRESHOLD − agri) · K.FOOD_INSEC_SCALE<br/>
+          unreported = max(0, K.STAT_CRED_THRESHOLD − politicalResp) · K.STAT_CRED_SCALE
+        </F>
+        <F>
+          rawSum = poverty + despair + violence + env + alignFail + foodInsec<br/>
+          cappedSum = K.DRIVER_CAP · (1 − exp(−rawSum / K.DRIVER_CAP))<br/>
+          mortRate = max(K.MORT_FLOOR, baseDeath + medicalOffset + cappedSum + unreported + warMort)<br/>
+          lifeExpectancy = clamp[28,90](1 / mean(mortRate))
+        </F>
+        <p>
+          The soft cap via 1−exp(−x/cap) keeps mortality from runaway-stacking when many drivers fire at once. The 28-yr floor on life expectancy reflects that even in catastrophe, populations don't die that fast in continuous time.
+        </p>
+        <Crit>
+          The mortality drivers are additive then capped — alternative formulations (multiplicative, hierarchical) would give different sensitivities. The driver scales were tuned so that under default rules each archetype produces a distinct, plausible long-run outcome; if you doubt those scales, you can edit them on the Constants page and see how the model's behavior shifts.
+        </Crit>
+      </Section>
+
+      <Section color="#ff8500" title="06 · WAR EFFECTS">
+        <p>
+          Aggression is the product of capability, low alignment, low political accountability, chip endowment, and intact institutions. Target vulnerability adds capability gap, weak political stability, and resource value.
+        </p>
+        <F>
+          aggression = AI · (1 − align) · (1 − politicalResp) · chips · institutionalCapacity · K.WAR_AGG_BASE_SCALE<br/>
+          capGap = max(0, 1 − dst.AI / max(0.5, src.AI))<br/>
+          targetVuln = capGap · K.WAR_VULN_CAPGAP_FACTOR + max(0,0.6−polStab) · K.WAR_VULN_POLSTAB_FACTOR + max(0,minerals−0.8) · K.WAR_VULN_MINERAL_FACTOR<br/>
+          warProb = aggression · targetVuln · K.WAR_PROB_SCALE
+        </F>
+        <p>
+          The most-aggressive most-vulnerable pair is selected each turn; if rng &lt; warProb, war fires with intensity (0.4 + uniform·0.5) · capScale.
+        </p>
+        <F>
+          target effects: polStab × (1 − ι·K.WAR_TARGET_POL_FACTOR), income × (1 − ι·K.WAR_TARGET_INCOME_FACTOR), AI/Robot × (1 − ι·K.WAR_TARGET_AICAP_FACTOR), warMort = ι·K.WAR_TARGET_MORTALITY<br/>
+          aggressor effects: income × (1 + ι·K.WAR_AGG_INCOME_BOOST), conc + ι·K.WAR_AGG_CONC_BOOST, warMort = ι·K.WAR_AGG_MORTALITY
+        </F>
+        <Crit>
+          Wars resolve in one turn (one year). Real wars persist. The war model is "intensity-pulse" rather than "duration-state" — defensible for tractability, but means the simulator never shows a 10-year war as such.
+        </Crit>
+      </Section>
+
+      <Section color="#00f0ff" title="07 · INTER-BLOC FLOWS">
+        <p>
+          Capital seeks low-tax low-instability mineral-rich destinations. Talent flows along push (low income, high unemployment, low stability) × pull (high income, low unemployment, high stability) gradients, dampened by emigration friction and reception capacity. Capability spills proportional to gap and source un-alignment.
+        </p>
+        <F>
+          capitalFlow = (taxDiff·0.4 + wealthDiff·0.3) · K.CAPITAL_FLOW_BASE · openness² · stabFactor · resourcePull<br/>
+          talentFlow = push · pull · K.TALENT_FLOW_BASE · (1 − friction·0.5) · reception<br/>
+          spillover = capGap · (1 − align·0.3) · K.SPILLOVER_LEAKAGE_BASE · (0.5 + retraining·0.5)
+        </F>
+        <Crit>
+          Flows are pairwise per-turn; the model has no sticky preferences (e.g., diaspora networks). Capability spillover is symmetric in form but asymmetric in effect (low-alignment sources leak more, high-retraining destinations absorb more) — defensible, but a strong abstraction.
+        </Crit>
+      </Section>
+
+      <Section color="#ff006e" title="08 · RESOLUTION CLASSIFIER">
+        <p>
+          At simulation end, the average of the last 30 years' state determines the regime category:
+        </p>
+        <F>
+          if avgStab &lt; 0.30: BREAKDOWN<br/>
+          else if avgConc &gt; 0.78 AND avgGini &gt; 0.62: RENTIER FEUDALISM<br/>
+          else if Mosaic AND avgIncome &lt; 0.5 AND avgGini &gt; 0.55: EXTRACTION<br/>
+          else if avgGini &gt; 0.55 AND avgIncome &lt; 0.7: BIFURCATION<br/>
+          else if avgIncome &gt; 1.4 AND avgUnemp &lt; 0.20 AND avgGini &lt; 0.45: ABUNDANCE<br/>
+          else: REDISTRIBUTION
+        </F>
+        <Crit>
+          The thresholds (0.78 for concentration, 0.62 for Gini, etc.) are stipulative. Different thresholds would re-bin worlds without changing underlying dynamics. The classifier exists for narrative legibility, not as a model claim.
+        </Crit>
+      </Section>
+    </div>
+  );
+}
+
+function ManualConstants({ customConstants, setConstant, resetConstants, isConstantsModified }) {
+  const classBadge = (cls) => {
+    const colors = { Empirical: '#06ffa5', Calibrated: '#00f0ff', Structural: '#c77dff' };
+    return (
+      <span className="pixel" style={{
+        fontSize: 8, padding: '1px 5px', color: colors[cls] || '#888',
+        background: `${colors[cls]}15`, border: `1px solid ${colors[cls]}40`,
+        letterSpacing: '0.05em',
+      }}>{cls.toUpperCase()}</span>
+    );
+  };
+
+  // Group constants
+  const grouped = {};
+  for (const [key, def] of Object.entries(CONSTANT_DEFS)) {
+    if (!grouped[def.group]) grouped[def.group] = [];
+    grouped[def.group].push({ key, def });
+  }
+
+  return (
+    <div className="space-y-3" style={{ fontSize: 14 }}>
+      <h2 className="pixel neon" style={{ color: '#ff8500', fontSize: 16, marginBottom: 8 }}>CONSTANTS</h2>
+      <p style={{ lineHeight: 1.6 }}>
+        Every numeric tunable in the simulation is listed here, classified by epistemic confidence and accompanied by its rationale. <strong style={{ color: '#06ffa5' }}>Empirical</strong> = anchored in commonly cited demographic or structural ranges. <strong style={{ color: '#00f0ff' }}>Calibrated</strong> = chosen so that under default rules each archetype produces a distinct, plausible long-run outcome — these values are tuning choices, not predictions about any specific country. <strong style={{ color: '#c77dff' }}>Structural</strong> = a modeling choice, defensible but not derivable from data.
+      </p>
+      <p style={{ lineHeight: 1.6 }}>
+        <strong style={{ color: '#ff8500' }}>You can edit any value here.</strong> Edits flow into the next simulation run and are included in JSON export.
+      </p>
+      <p style={{ lineHeight: 1.6 }}>
+        <strong style={{ color: '#ffbe0b' }}>Important — what counts as "validated":</strong>{' '}
+        the published calibration baselines (Open Market ≈ 76 yrs, Social Compact ≈ 78, etc.), the 12 hypothesis-tested scenarios in the Findings page, and the cross-validation result (32/32 JS↔Python medians within 1 yr) were all produced <em>with the constants below at their default values</em>. The Python validation suite in the GitHub repo's <code style={{ color: '#06ffa5', fontSize: 13 }}>validation/</code> folder also tests against defaults. If you edit any constant here, those validation results no longer apply to your simulation — you've changed the model. That's a feature, not a bug: editing constants is how you probe the model's sensitivity to its own assumptions. But the "MODIFIED" pill, the warning banners, and this note exist so you don't accidentally compare your custom-constant outputs to published default-constant numbers.
+      </p>
+
+      {isConstantsModified && (
+        <div className="flex items-center justify-between" style={{
+          background: 'rgba(255,190,11,0.10)', border: '1px solid rgba(255,190,11,0.40)',
+          padding: '8px 14px', borderRadius: 3, fontSize: 13,
+        }}>
+          <span><AlertCircle size={13} className="inline mr-1" style={{ color: '#ffbe0b' }} />Constants are modified from defaults — the simulation\'s default tuning no longer applies.</span>
+          <button onClick={resetConstants} className="btn-pill" style={{ color: '#ffbe0b', border: '1px solid #ffbe0b80' }}>
+            <RotateCcw size={11} className="inline mr-1" />Reset to defaults
+          </button>
+        </div>
+      )}
+
+      {Object.entries(grouped).map(([groupKey, items]) => {
+        const group = CONSTANT_GROUPS[groupKey] || { label: groupKey, color: '#888', icon: '·' };
+        return (
+          <div key={groupKey} style={{ marginTop: 18 }}>
+            <h3 className="pixel" style={{ color: group.color, fontSize: 12, marginBottom: 8 }}>
+              {group.icon} {group.label.toUpperCase()}
+            </h3>
+            <div className="space-y-2">
+              {items.map(({ key, def }) => {
+                const currentVal = customConstants[key];
+                const isModified = currentVal !== def.value;
+                return (
+                  <div key={key} style={{
+                    borderLeft: `2px solid ${group.color}40`,
+                    paddingLeft: 12, paddingTop: 4, paddingBottom: 4,
+                    background: isModified ? 'rgba(255,190,11,0.05)' : 'transparent',
+                  }}>
+                    <div className="flex items-start justify-between gap-3" style={{ flexWrap: 'wrap' }}>
+                      <div style={{ flex: '1 1 60%', minWidth: 280 }}>
+                        <div className="flex items-center gap-2" style={{ flexWrap: 'wrap' }}>
+                          <code style={{ fontFamily: 'VT323, monospace', fontSize: 16, color: group.color }}>{key}</code>
+                          {classBadge(def.class)}
+                          {isModified && <span className="pixel" style={{ fontSize: 8, color: '#ffbe0b', letterSpacing: '0.05em' }}>· MODIFIED</span>}
+                        </div>
+                        <div style={{ fontSize: 13, color: 'rgba(240,230,210,0.85)', marginTop: 2 }}>{def.label}</div>
+                        <div style={{ fontSize: 12, color: 'rgba(240,230,210,0.6)', marginTop: 4, lineHeight: 1.5 }}>
+                          <strong>Rationale:</strong> {def.rationale}
+                        </div>
+                      </div>
+                      <div style={{ flex: '0 0 auto', minWidth: 180 }}>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="number"
+                            step="any"
+                            value={currentVal}
+                            onChange={(e) => {
+                              const v = parseFloat(e.target.value);
+                              if (!isNaN(v)) setConstant(key, v);
+                            }}
+                            style={{
+                              fontFamily: 'VT323, monospace', fontSize: 16,
+                              background: '#0a0e27', color: group.color,
+                              border: `1px solid ${group.color}60`,
+                              padding: '4px 8px', width: 110, borderRadius: 2,
+                            }}
+                          />
+                          {def.unit && <span style={{ fontSize: 12, color: 'rgba(240,230,210,0.5)' }}>{def.unit}</span>}
+                          {isModified && (
+                            <button
+                              onClick={() => setConstant(key, def.value)}
+                              title="Reset to default"
+                              style={{
+                                background: 'transparent', border: '1px solid rgba(255,190,11,0.4)',
+                                color: '#ffbe0b', padding: '2px 6px', borderRadius: 2, cursor: 'pointer',
+                              }}>
+                              <RotateCcw size={10} />
+                            </button>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 11, color: 'rgba(240,230,210,0.45)', marginTop: 3 }}>
+                          default {def.value} · suggested range [{def.range[0]}, {def.range[1]}]
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function ManualHowTo() {
   return (
     <div className="space-y-4 leading-relaxed" style={{ fontSize: 14 }}>
@@ -1771,7 +2566,7 @@ function ManualHowTo() {
       <div>
         <h3 className="pixel" style={{ color: '#ffbe0b', fontSize: 12 }}>STEP 2 · ADJUST THE LEVERS</h3>
         <p style={{ marginTop: 6 }}>
-          The left panel shows the ten policy rules for the active bloc. Drag sliders to change values. Edits are highlighted with a glow. The "Reset" button reverts the active bloc to its calibrated default. "Reset all" reverts everything.
+          The left panel shows the ten policy rules for the active bloc. Drag sliders to change values. Edits are highlighted with a glow. The "Reset" button reverts the active bloc to its default values. "Reset all" reverts everything.
         </p>
       </div>
 
@@ -2042,11 +2837,37 @@ function BlocLegend() {
   );
 }
 
-function FindingsView({ applyScenario }) {
+function FindingsView({ applyScenario, isConstantsModified }) {
   const [page, setPage] = useState('insights');
   return (
     <div className="fade-in">
       <BlocLegend />
+
+      {/* Persistent banner: all findings shown here were produced with default parameters */}
+      <div className="flex items-start gap-2 mb-3" style={{
+        background: 'rgba(0,240,255,0.07)', border: '1px solid rgba(0,240,255,0.30)',
+        padding: '8px 14px', borderRadius: 3, fontSize: 13, lineHeight: 1.5,
+      }}>
+        <FlaskConical size={14} style={{ color: '#00f0ff', flexShrink: 0, marginTop: 2 }} />
+        <span style={{ color: 'rgba(240,230,210,0.85)' }}>
+          <strong style={{ color: '#00f0ff' }}>All numbers on this page were produced with default model parameters.</strong>{' '}
+          Calibration baselines, scenario life-expectancy figures, hypothesis-test results (33/33), and JS↔Python validation (32/32) all assume the constants listed in <em>Manual → Constants</em> are at their default values. If you edit constants, your runs will diverge from these published numbers — that's the point — but the findings below should be read as "what this model says under its default calibration."
+        </span>
+      </div>
+
+      {isConstantsModified && (
+        <div className="flex items-start gap-2 mb-3" style={{
+          background: 'rgba(255,133,0,0.10)', border: '1px solid rgba(255,133,0,0.45)',
+          padding: '8px 14px', borderRadius: 3, fontSize: 13, lineHeight: 1.5,
+        }}>
+          <AlertCircle size={14} style={{ color: '#ff8500', flexShrink: 0, marginTop: 2 }} />
+          <span style={{ color: 'rgba(240,230,210,0.9)' }}>
+            <strong style={{ color: '#ff8500' }}>You currently have custom constants active.</strong>{' '}
+            The figures below are still the published results under default parameters — but if you click "Apply this scenario" and run it, your modified constants will be used and results will differ from the numbers shown here.
+          </span>
+        </div>
+      )}
+
       <div className="flex gap-1 mb-3 flex-wrap" style={{ borderBottom: '1px solid rgba(6,255,165,0.20)' }}>
         {FINDINGS_PAGES.map(p => {
           const Icon = p.icon;
@@ -2103,7 +2924,7 @@ function KeyInsights({ onJump }) {
           KEY FINDINGS
         </h2>
         <p className="leading-relaxed" style={{ fontSize: 15 }}>
-          Across <strong style={{ color: '#06ffa5' }}>12 institutional configurations</strong> tested at <strong style={{ color: '#06ffa5' }}>200 stochastic worlds each</strong> in Python — and re-validated in this JavaScript build — the model produced consistent, explainable results. <strong style={{ color: '#00f0ff' }}>33/33 hypotheses confirmed.</strong> Here's what it tells us.
+          Across <strong style={{ color: '#06ffa5' }}>12 institutional configurations</strong> tested at <strong style={{ color: '#06ffa5' }}>200 stochastic worlds each</strong> in Python — and re-validated in this JavaScript build — the model produced consistent, explainable results. <strong style={{ color: '#00f0ff' }}>33/33 hypotheses confirmed.</strong> All numbers below were generated with default model constants. Here's what the model tells us.
         </p>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-4">
@@ -2230,7 +3051,7 @@ function ScenariosLibrary({ applyScenario }) {
           12 validated configurations. Each card shows the rule overrides, the actual median life expectancy across N=200 stochastic worlds, the hypothesis being tested, and the mechanism. Click <strong style={{ color: '#06ffa5' }}>Apply this scenario</strong> to load the rules into the Setup tab and run it yourself.
         </p>
         <p className="text-muted crt" style={{ fontSize: 13 }}>
-          ▷ Numbers come from the Python <code>test_harness.py</code> — JS results match within 0.4 yrs.
+          ▷ Numbers come from the Python <code>test_harness.py</code> running with default model constants — JS results match within 0.4 yrs. If you have edited any constant in <em>Manual → Constants</em>, your runs will produce different numbers than those shown here.
         </p>
       </div>
 
@@ -2375,7 +3196,7 @@ function ConvergenceFindings() {
           HOW MANY SIMULATIONS ARE ENOUGH?
         </h2>
         <p className="leading-relaxed mb-3" style={{ fontSize: 15 }}>
-          Each simulation is stochastic. To trust a number, you need to know the standard error around it. We answered this with a <strong style={{ color: '#ffbe0b' }}>bootstrap convergence study</strong>: ran a pool of 5,000 BASELINE worlds in Python, then resampled at smaller sizes to estimate the SE of the median life expectancy as a function of N.
+          Each simulation is stochastic. To trust a number, you need to know the standard error around it. We answered this with a <strong style={{ color: '#ffbe0b' }}>bootstrap convergence study</strong>: ran a pool of 5,000 BASELINE worlds in Python <em>at default parameters</em>, then resampled at smaller sizes to estimate the SE of the median life expectancy as a function of N.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
           <StatCallout value="N=1,000" label="sweet spot for design decisions" color="#ffbe0b" big />

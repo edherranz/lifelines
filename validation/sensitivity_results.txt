@@ -1,0 +1,146 @@
+====================================================================================
+LIFELINES — sensitivity analysis
+====================================================================================
+  Worlds per cell:  100
+  Perturbation:     ±20%
+  Scenario:         BASELINE (default rules, AI shock active)
+
+Phase 1/2 — running unperturbed baseline...
+  baseline medians: OM=73.64  SC=80.34  DO=68.21  Mosaic=53.89  (took 1.8s)
+
+Phase 2/2 — perturbing 53 constants (each tested at low + high)...
+  [ 1/53] AI_CEILING_FACTOR                Σ|Δ|= 1.38  3.4s   OM(+0.06/+0.13) SC(-0.23/+0.33) DO(+0.56/-0.16) Mosaic(+0.66/-0.62)
+  [ 2/53] ROBOT_CEILING_FACTOR             Σ|Δ|= 0.05  3.3s   OM(-0.01/+0.01) SC(-0.01/+0.01) DO(+0.02/-0.01) Mosaic(+0.02/-0.02)
+  [ 3/53] AI_GROWTH_BASE                   Σ|Δ|= 2.10  3.3s   OM(+0.26/-0.12) SC(-0.16/+0.14) DO(+0.40/-0.43) Mosaic(+1.37/-1.34)
+  [ 4/53] ROBOT_GROWTH_BASE                Σ|Δ|= 0.40  3.4s   OM(-0.04/+0.05) SC(-0.06/+0.09) DO(+0.13/-0.07) Mosaic(+0.17/-0.19)
+  [ 5/53] ALIGNMENT_GROWTH_DRAG            Σ|Δ|= 0.55  3.3s   OM(-0.02/+0.11) SC(+0.09/-0.02) DO(-0.14/+0.09) Mosaic(-0.34/+0.29)
+  [ 6/53] MEDICAL_DIVIDEND_FACTOR          Σ|Δ|= 1.80  3.3s   OM(-0.46/+0.53) SC(-0.74/+0.78) DO(-0.35/+0.38) Mosaic(-0.17/+0.17)
+  [ 7/53] PRODUCTIVITY_DIVIDEND_FACTOR     Σ|Δ|= 1.08  3.3s   OM(-0.17/+0.08) SC(+0.00/+0.00) DO(-0.72/+0.52) Mosaic(-0.34/+0.35)
+  [ 8/53] SHARE_TO_SOCIETY_CONC_DRAG       Σ|Δ|= 1.63  3.3s   OM(+0.35/-0.36) SC(+0.30/-0.28) DO(+0.63/-0.71) Mosaic(+0.32/-0.31)
+  [ 9/53] SHOCK_PROB                       Σ|Δ|= 0.64  3.3s   OM(+0.11/-0.04) SC(-0.11/+0.04) DO(+0.10/-0.02) Mosaic(-0.25/-0.60)
+  [10/53] FOOD_SHOCK_BASE_PROB             Σ|Δ|= 0.13  3.4s   OM(+0.00/+0.02) SC(-0.01/-0.03) DO(+0.03/-0.01) Mosaic(-0.01/-0.16)
+  [11/53] BASE_DEATH                       Σ|Δ|=44.83  3.4s   OM(+16.36/-11.45) SC(+9.66/-13.44) DO(+14.02/-9.94) Mosaic(+8.39/-6.40)
+  [12/53] MEDICAL_OFFSET_CAP               Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [13/53] POVERTY_DEATH_SCALE              Σ|Δ|= 0.73  3.3s   OM(+0.03/-0.00) SC(+0.00/+0.00) DO(+0.06/-0.04) Mosaic(+0.68/-0.65)
+  [14/53] POVERTY_THRESHOLD                Σ|Δ|= 5.23  3.4s   OM(+0.04/-2.23) SC(+0.00/+0.00) DO(+0.23/-2.48) Mosaic(+2.30/-3.17)
+  [15/53] DESPAIR_DEATH_SCALE              Σ|Δ|= 2.64  3.3s   OM(+1.14/-1.06) SC(+0.50/-0.46) DO(+0.75/-0.65) Mosaic(+0.37/-0.36)
+  [16/53] DESPAIR_UBI_DAMP                 Σ|Δ|= 0.90  3.4s   OM(-0.21/+0.22) SC(-0.41/+0.46) DO(-0.20/+0.22) Mosaic(-0.04/+0.04)
+  [17/53] VIOLENCE_DEATH_SCALE             Σ|Δ|= 1.35  3.4s   OM(+0.21/-0.20) SC(+0.19/-0.17) DO(+0.46/-0.45) Mosaic(+0.51/-0.52)
+  [18/53] ENV_DEATH_ALIGN_THRESHOLD        Σ|Δ|= 6.41  3.3s   OM(+1.72/-3.14) SC(+0.00/+0.00) DO(+1.80/-3.27) Mosaic(+1.50/-1.39)
+  [19/53] ENV_DEATH_SCALE                  Σ|Δ|= 1.26  3.4s   OM(+0.34/-0.33) SC(+0.00/+0.00) DO(+0.35/-0.35) Mosaic(+0.59/-0.57)
+  [20/53] ALIGN_FAIL_CAP_THRESHOLD         Σ|Δ|= 0.25  3.3s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(-0.26/+0.24)
+  [21/53] ALIGN_FAIL_ALIGN_THRESHOLD       Σ|Δ|= 3.90  3.3s   OM(+0.00/-2.28) SC(+0.00/+0.00) DO(+0.00/-1.79) Mosaic(+2.12/-1.61)
+  [22/53] ALIGN_FAIL_SCALE                 Σ|Δ|= 0.44  3.3s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.45/-0.43)
+  [23/53] FOOD_INSEC_INCOME_THRESHOLD      Σ|Δ|= 1.51  3.3s   OM(+0.02/-0.18) SC(+0.00/+0.00) DO(+0.06/-0.53) Mosaic(+0.89/-1.34)
+  [24/53] FOOD_INSEC_AGRI_THRESHOLD        Σ|Δ|= 0.87  3.5s   OM(+0.02/-0.00) SC(+0.00/+0.00) DO(+0.06/-0.05) Mosaic(+0.81/-0.79)
+  [25/53] FOOD_INSEC_SCALE                 Σ|Δ|= 0.28  3.3s   OM(+0.00/-0.00) SC(+0.00/+0.00) DO(+0.01/-0.01) Mosaic(+0.27/-0.26)
+  [26/53] STAT_CRED_THRESHOLD              Σ|Δ|= 2.35  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+2.31/-2.16) Mosaic(+0.00/-0.23)
+  [27/53] STAT_CRED_SCALE                  Σ|Δ|= 0.74  3.3s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.75/-0.74) Mosaic(+0.00/+0.00)
+  [28/53] DRIVER_CAP                       Σ|Δ|= 1.02  3.3s   OM(+0.10/-0.06) SC(+0.03/-0.02) DO(+0.10/-0.07) Mosaic(+0.94/-0.72)
+  [29/53] MORT_FLOOR                       Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [30/53] WAR_T_MIN                        Σ|Δ|= 0.42  3.4s   OM(+0.02/+0.06) SC(-0.18/-0.15) DO(-0.07/+0.15) Mosaic(-0.14/-0.06)
+  [31/53] WAR_AGG_BASE_SCALE               Σ|Δ|= 0.30  3.3s   OM(+0.00/+0.03) SC(+0.00/+0.04) DO(+0.05/-0.05) Mosaic(+0.02/-0.40)
+  [32/53] WAR_PROB_SCALE                   Σ|Δ|= 0.23  3.4s   OM(+0.00/+0.03) SC(+0.00/+0.04) DO(+0.05/-0.05) Mosaic(+0.00/-0.29)
+  [33/53] WAR_VULN_CAPGAP_FACTOR           Σ|Δ|= 0.13  3.3s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.05/-0.02) Mosaic(+0.00/-0.20)
+  [34/53] WAR_VULN_POLSTAB_FACTOR          Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [35/53] WAR_VULN_MINERAL_FACTOR          Σ|Δ|= 0.03  3.3s   OM(+0.00/+0.00) SC(+0.00/-0.01) DO(+0.05/+0.00) Mosaic(+0.00/+0.00)
+  [36/53] WAR_TARGET_MORTALITY             Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [37/53] WAR_AGG_MORTALITY                Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [38/53] WAR_TARGET_POL_FACTOR            Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [39/53] WAR_TARGET_INCOME_FACTOR         Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [40/53] WAR_TARGET_AICAP_FACTOR          Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/-0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [41/53] WAR_AGG_INCOME_BOOST             Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [42/53] WAR_AGG_CONC_BOOST               Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [43/53] COERCION_PROB                    Σ|Δ|= 0.35  3.3s   OM(+0.17/+0.03) SC(-0.02/-0.03) DO(+0.03/-0.08) Mosaic(+0.19/-0.16)
+  [44/53] COERCION_GAP_THRESHOLD           Σ|Δ|= 0.09  3.4s   OM(+0.03/-0.00) SC(+0.00/-0.02) DO(+0.00/-0.05) Mosaic(+0.00/+0.08)
+  [45/53] CAPITAL_FLOW_BASE                Σ|Δ|= 0.00  3.4s   OM(-0.00/+0.00) SC(+0.00/-0.00) DO(-0.00/+0.00) Mosaic(-0.00/+0.00)
+  [46/53] CAPITAL_FLOW_MAX                 Σ|Δ|= 0.00  3.5s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [47/53] TALENT_FLOW_BASE                 Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [48/53] TALENT_FLOW_MAX                  Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [49/53] SPILLOVER_LEAKAGE_BASE           Σ|Δ|= 0.57  3.4s   OM(+0.03/-0.02) SC(-0.02/+0.02) DO(+0.04/+0.00) Mosaic(+0.55/-0.46)
+  [50/53] CRISIS_THRESHOLD                 Σ|Δ|= 0.07  3.4s   OM(+0.03/+0.00) SC(-0.02/+0.00) DO(+0.00/+0.00) Mosaic(-0.03/-0.05)
+  [51/53] CRISIS_PROB                      Σ|Δ|= 0.00  3.4s   OM(+0.00/+0.00) SC(+0.00/+0.00) DO(+0.00/+0.00) Mosaic(+0.00/+0.00)
+  [52/53] CATASTROPHE_PROB                 Σ|Δ|= 0.71  3.3s   OM(+0.20/-0.13) SC(+0.15/-0.31) DO(+0.28/-0.01) Mosaic(+0.10/-0.23)
+  [53/53] CRISIS_SCAR_DECAY                Σ|Δ|=18.55  3.4s   OM(+0.11/-10.83) SC(-0.02/-12.56) DO(+0.43/-7.12) Mosaic(+0.44/-5.61)
+
+====================================================================================
+RANKING — constants by total sensitivity (sum of |ΔLE| across 4 blocs, avg of low & high)
+====================================================================================
+  Baseline medians:  OM=73.64  SC=80.34  DO=68.21  Mosaic=53.89
+
+    # CONSTANT                         GROUP       CLASS        Σ|ΔLE|  per-bloc Δ at low / high
+  ──────────────────────────────────────────────────────────────────────────────────
+    1 BASE_DEATH                       mortality   Empirical    44.828  OM:+16.4/-11.4   SC:+9.7/-13.4   DO:+14.0/-9.9   Mosaic:+8.4/-6.4
+    2 CRISIS_SCAR_DECAY                crisis      Structural   18.552  OM:+0.1/-10.8   SC:-0.0/-12.6   DO:+0.4/-7.1   Mosaic:+0.4/-5.6
+    3 ENV_DEATH_ALIGN_THRESHOLD        mortality   Structural    6.409  OM:+1.7/-3.1   SC:+0.0/+0.0   DO:+1.8/-3.3   Mosaic:+1.5/-1.4
+    4 POVERTY_THRESHOLD                mortality   Structural    5.228  OM:+0.0/-2.2   SC:+0.0/+0.0   DO:+0.2/-2.5   Mosaic:+2.3/-3.2
+    5 ALIGN_FAIL_ALIGN_THRESHOLD       mortality   Structural    3.898  OM:+0.0/-2.3   SC:+0.0/+0.0   DO:+0.0/-1.8   Mosaic:+2.1/-1.6
+    6 DESPAIR_DEATH_SCALE              mortality   Calibrated    2.645  OM:+1.1/-1.1   SC:+0.5/-0.5   DO:+0.7/-0.6   Mosaic:+0.4/-0.4
+    7 STAT_CRED_THRESHOLD              mortality   Structural    2.351  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+2.3/-2.2   Mosaic:+0.0/-0.2
+    8 AI_GROWTH_BASE                   capability  Calibrated    2.105  OM:+0.3/-0.1   SC:-0.2/+0.1   DO:+0.4/-0.4   Mosaic:+1.4/-1.3
+    9 MEDICAL_DIVIDEND_FACTOR          dividends   Structural    1.799  OM:-0.5/+0.5   SC:-0.7/+0.8   DO:-0.3/+0.4   Mosaic:-0.2/+0.2
+   10 SHARE_TO_SOCIETY_CONC_DRAG       dividends   Structural    1.628  OM:+0.4/-0.4   SC:+0.3/-0.3   DO:+0.6/-0.7   Mosaic:+0.3/-0.3
+   11 FOOD_INSEC_INCOME_THRESHOLD      mortality   Structural    1.507  OM:+0.0/-0.2   SC:+0.0/+0.0   DO:+0.1/-0.5   Mosaic:+0.9/-1.3
+   12 AI_CEILING_FACTOR                capability  Structural    1.379  OM:+0.1/+0.1   SC:-0.2/+0.3   DO:+0.6/-0.2   Mosaic:+0.7/-0.6
+   13 VIOLENCE_DEATH_SCALE             mortality   Calibrated    1.346  OM:+0.2/-0.2   SC:+0.2/-0.2   DO:+0.5/-0.4   Mosaic:+0.5/-0.5
+   14 ENV_DEATH_SCALE                  mortality   Calibrated    1.259  OM:+0.3/-0.3   SC:+0.0/+0.0   DO:+0.4/-0.3   Mosaic:+0.6/-0.6
+   15 PRODUCTIVITY_DIVIDEND_FACTOR     dividends   Structural    1.084  OM:-0.2/+0.1   SC:+0.0/+0.0   DO:-0.7/+0.5   Mosaic:-0.3/+0.3
+   16 DRIVER_CAP                       mortality   Structural    1.024  OM:+0.1/-0.1   SC:+0.0/-0.0   DO:+0.1/-0.1   Mosaic:+0.9/-0.7
+   17 DESPAIR_UBI_DAMP                 mortality   Structural    0.901  OM:-0.2/+0.2   SC:-0.4/+0.5   DO:-0.2/+0.2   Mosaic:-0.0/+0.0
+   18 FOOD_INSEC_AGRI_THRESHOLD        mortality   Structural    0.871  OM:+0.0/-0.0   SC:+0.0/+0.0   DO:+0.1/-0.1   Mosaic:+0.8/-0.8
+   19 STAT_CRED_SCALE                  mortality   Calibrated    0.744  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.8/-0.7   Mosaic:+0.0/+0.0
+   20 POVERTY_DEATH_SCALE              mortality   Calibrated    0.729  OM:+0.0/-0.0   SC:+0.0/+0.0   DO:+0.1/-0.0   Mosaic:+0.7/-0.6
+   21 CATASTROPHE_PROB                 crisis      Structural    0.707  OM:+0.2/-0.1   SC:+0.2/-0.3   DO:+0.3/-0.0   Mosaic:+0.1/-0.2
+   22 SHOCK_PROB                       shocks      Structural    0.638  OM:+0.1/-0.0   SC:-0.1/+0.0   DO:+0.1/-0.0   Mosaic:-0.3/-0.6
+   23 SPILLOVER_LEAKAGE_BASE           flows       Structural    0.567  OM:+0.0/-0.0   SC:-0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.6/-0.5
+   24 ALIGNMENT_GROWTH_DRAG            capability  Structural    0.554  OM:-0.0/+0.1   SC:+0.1/-0.0   DO:-0.1/+0.1   Mosaic:-0.3/+0.3
+   25 ALIGN_FAIL_SCALE                 mortality   Structural    0.443  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.5/-0.4
+   26 WAR_T_MIN                        war         Structural    0.416  OM:+0.0/+0.1   SC:-0.2/-0.1   DO:-0.1/+0.2   Mosaic:-0.1/-0.1
+   27 ROBOT_GROWTH_BASE                capability  Calibrated    0.399  OM:-0.0/+0.0   SC:-0.1/+0.1   DO:+0.1/-0.1   Mosaic:+0.2/-0.2
+   28 COERCION_PROB                    coercion    Structural    0.352  OM:+0.2/+0.0   SC:-0.0/-0.0   DO:+0.0/-0.1   Mosaic:+0.2/-0.2
+   29 WAR_AGG_BASE_SCALE               war         Structural    0.298  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.1/-0.0   Mosaic:+0.0/-0.4
+   30 FOOD_INSEC_SCALE                 mortality   Calibrated    0.279  OM:+0.0/-0.0   SC:+0.0/+0.0   DO:+0.0/-0.0   Mosaic:+0.3/-0.3
+   31 ALIGN_FAIL_CAP_THRESHOLD         mortality   Structural    0.253  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:-0.3/+0.2
+   32 WAR_PROB_SCALE                   war         Calibrated    0.234  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.1/-0.0   Mosaic:+0.0/-0.3
+   33 WAR_VULN_CAPGAP_FACTOR           war         Structural    0.134  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.1/-0.0   Mosaic:+0.0/-0.2
+   34 FOOD_SHOCK_BASE_PROB             shocks      Structural    0.132  OM:+0.0/+0.0   SC:-0.0/-0.0   DO:+0.0/-0.0   Mosaic:-0.0/-0.2
+   35 COERCION_GAP_THRESHOLD           coercion    Structural    0.088  OM:+0.0/-0.0   SC:+0.0/-0.0   DO:+0.0/-0.0   Mosaic:+0.0/+0.1
+   36 CRISIS_THRESHOLD                 crisis      Structural    0.067  OM:+0.0/+0.0   SC:-0.0/+0.0   DO:+0.0/+0.0   Mosaic:-0.0/-0.1
+   37 ROBOT_CEILING_FACTOR             capability  Structural    0.053  OM:-0.0/+0.0   SC:-0.0/+0.0   DO:+0.0/-0.0   Mosaic:+0.0/-0.0
+   38 WAR_VULN_MINERAL_FACTOR          war         Structural    0.032  OM:+0.0/+0.0   SC:+0.0/-0.0   DO:+0.1/+0.0   Mosaic:+0.0/+0.0
+   39 CAPITAL_FLOW_BASE                flows       Structural    0.005  OM:-0.0/+0.0   SC:+0.0/-0.0   DO:-0.0/+0.0   Mosaic:-0.0/+0.0
+   40 WAR_TARGET_AICAP_FACTOR          war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/-0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   41 MEDICAL_OFFSET_CAP               mortality   Calibrated    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   42 MORT_FLOOR                       mortality   Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   43 WAR_VULN_POLSTAB_FACTOR          war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   44 WAR_TARGET_MORTALITY             war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   45 WAR_AGG_MORTALITY                war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   46 WAR_TARGET_POL_FACTOR            war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   47 WAR_TARGET_INCOME_FACTOR         war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   48 WAR_AGG_INCOME_BOOST             war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   49 WAR_AGG_CONC_BOOST               war         Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   50 CAPITAL_FLOW_MAX                 flows       Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   51 TALENT_FLOW_BASE                 flows       Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   52 TALENT_FLOW_MAX                  flows       Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+   53 CRISIS_PROB                      crisis      Structural    0.000  OM:+0.0/+0.0   SC:+0.0/+0.0   DO:+0.0/+0.0   Mosaic:+0.0/+0.0
+
+====================================================================================
+INTERPRETATION
+====================================================================================
+  Most-sensitive constants (model output depends most on these):
+    · BASE_DEATH (Empirical) — Σ|ΔLE| = 44.83 yrs
+    · CRISIS_SCAR_DECAY (Structural) — Σ|ΔLE| = 18.55 yrs
+    · ENV_DEATH_ALIGN_THRESHOLD (Structural) — Σ|ΔLE| = 6.41 yrs
+
+  Least-sensitive constants (in this scenario, output barely moves):
+    · CRISIS_PROB (Structural) — Σ|ΔLE| = 0.00 yrs
+    · TALENT_FLOW_MAX (Structural) — Σ|ΔLE| = 0.00 yrs
+    · TALENT_FLOW_BASE (Structural) — Σ|ΔLE| = 0.00 yrs
+
+  Reading the table: a value of 1.0 means moving this constant by ±20%
+  shifts median life expectancy by 1 year (summed across the 4 blocs, averaged over the
+  two perturbation directions). High sensitivity means the model output is structurally
+  driven by that constant; low sensitivity means the constant is robust at the scenario
+  tested. (Sensitivities are scenario-dependent — different rules will reorder this list.)
+
+  Total time: 180.3s

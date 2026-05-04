@@ -1,119 +1,229 @@
+"""LIFELINES audit_sync — verify JS and Python constants are in sync.
+
+Parses the CONSTANT_DEFS catalog from both lifelines.jsx (JS) and sim_v5.py (Py)
+and compares them by key. Reports:
+  - Missing keys (in JS but not Py, or vice versa)
+  - Value mismatches (e.g., JS says 0.012, Py says 0.013)
+  - Class disagreements (e.g., JS says Calibrated, Py says Empirical)
+
+Exits 0 on success, 1 on any mismatch.
+
+Both catalogs use the same dict-of-dict structure with:
+  KEY: { value: <number>, group: '<name>', class: '<Empirical|Calibrated|Structural>' }
+
+The JS version has additional metadata (label, unit, description, rationale, range)
+that we don't compare here — those are documentation-only fields not used by the
+simulation. Only `value`, `group`, and `class` need to match.
 """
-JS-Python sync audit: extract key numeric constants from both files and
-verify they match. Catches drift where one file was updated without the other.
-"""
+import os
 import re
 import sys
+import importlib.util
 
-JS_FILE = '/mnt/user-data/outputs/lifelines.jsx'
-PY_FILE = '/home/claude/sim_v5.py'
+# ─── Paths ──────────────────────────────────────────────────────────
+HERE = os.path.dirname(os.path.abspath(__file__))
+PY_FILE = os.path.join(HERE, 'sim_v5.py')
+
+# JSX lives at the root of the LIFELINES repo (one level up from validation/)
+# but in the standalone working directory it might be in /mnt/user-data/outputs.
+# Try both.
+JS_CANDIDATES = [
+    os.path.normpath(os.path.join(HERE, '..', 'src', 'lifelines.jsx')),
+    os.path.normpath(os.path.join(HERE, '..', 'lifelines.jsx')),
+    '/mnt/user-data/outputs/lifelines.jsx',
+]
+JS_FILE = next((p for p in JS_CANDIDATES if os.path.exists(p)), JS_CANDIDATES[-1])
 
 
-def extract_numbers_around(text, pattern, label, n_floats=1):
-    """Find pattern in text, extract n_floats numeric values that follow."""
-    matches = re.findall(pattern, text)
-    return matches
-
-
-def grep_numeric(text, pattern):
-    """Extract a number after a pattern."""
-    m = re.search(pattern, text)
-    return m.group(1) if m else None
-
-
-def compare_params():
-    js = open(JS_FILE).read()
-    py = open(PY_FILE).read()
-
-    print('=' * 80)
-    print('JS / PYTHON CONSTANT AUDIT')
-    print('=' * 80)
-
-    issues = 0
-
-    # ── Bloc endowments ──
-    print('\n┌─ BLOC ENDOWMENTS')
-    blocs = ['OM', 'SC', 'DO', 'Mosaic']
-    for bloc in blocs:
-        # JS: endowments: { energy: 1.0, chips: 1.2, minerals: 0.7, agriculture: 1.1, infrastructure: 1.00 }
-        py_pattern = f"'{bloc}': dict\\(.*?'energy': ([\\d.]+).*?'chips': ([\\d.]+).*?'minerals': ([\\d.]+).*?'agriculture': ([\\d.]+).*?'infrastructure': ([\\d.]+)"
-        # Actually let me use a different approach — match ENDOWMENTS dict
-        pass
-
-    # Simpler approach: extract specific numeric constants we know matter
-    checks = [
-        ('Base death rate', r'baseDeath\s*=\s*([\d.]+)', r'base_death\s*=\s*([\d.]+)'),
-        ('AI ceiling factor (energy)', r'aiCap\s*\*?[^\n]*4\s*\*\s*j?\.?endowments\.energy', r'4\s*\*\s*j\[.endowments.\]\[.energy.\]'),
-        ('Robot ceiling factor (chips)', r'3\s*\*\s*[a-z]*\.?endowments\.chips', r'3\s*\*\s*j\[.endowments.\]\[.chips.\]'),
-        ('Mosaic infra factor', r"infrastructure:\s*0\.72", r"'infrastructure':\s*0\.72"),
-        ('War aggression × 0.15', r'aggression\s*\*?\s*0\.15|\*\s*0\.15;\s*//.*aggression', r'\*\s*0\.15'),
-        ('War probability × 0.04', r'\*\s*0\.04;\s*//.*~3%|warProb\s*=\s*aggression\s*\*\s*targetVuln\s*\*\s*0\.04', r'war_prob\s*=\s*aggression\s*\*\s*target_vuln\s*\*\s*0\.04'),
-        ('Target mortality coefficient (war)', r"intensity\s*\*\s*0\.045", r"'intensity'\]\s*\*\s*0\.045"),
-        ('Aggressor mortality coefficient (war)', r"intensity\s*\*\s*0\.010(?!\d)", r"'intensity'\]\s*\*\s*0\.010(?!\d)"),
-        ('Stat-credibility penalty coefficient', r'0\.30\s*-\s*n\.politicalResp\)\s*\*\s*0\.008', r'0\.30\s*-\s*n\[.politicalResp.\]\)\s*\*\s*0\.008'),
-        ('Capped driver smoothing constant', r'0\.027\s*\*\s*\(1\s*-\s*Math\.exp', r'0\.027\s*\*\s*\(1\s*-\s*math\.exp'),
-        ('Alignment failure threshold', r'totalCap\s*-\s*1\.5', r'total_cap\s*-\s*1\.5'),
-        ('Alignment failure threshold-2 (0.4)', r'0\.4\s*-\s*n\.alignment\)\s*\*\s*0\.012', r'0\.4\s*-\s*n\[.alignment.\]\)\s*\*\s*0\.012'),
-        ('Poverty death threshold (0.65)', r'0\.65\s*-\s*j\.medianIncome\)\s*\*\s*0\.012', r'0\.65\s*-\s*j\[.medianIncome.\]\)\s*\*\s*0\.012'),
-        ('Despair death (UBI offset 0.95)', r'1\s*-\s*n\.ubiLevel\s*\*\s*0\.95\)\s*\*\s*0\.006', r'1\s*-\s*n\[.ubiLevel.\]\s*\*\s*0\.95\)\s*\*\s*0\.006'),
-        ('Violence death (1-polStab × 0.013)', r'1\s*-\s*j\.polStability\)\s*\*\s*0\.013', r'1\s*-\s*j\[.polStability.\]\)\s*\*\s*0\.013'),
-        ('Number of turns', r'NUM_TURNS\s*=\s*(\d+)', r'NUM_TURNS\s*=\s*(\d+)'),
-        ('War mortality target', r'w\.intensity\s*\*\s*0\.045', r"w\[.intensity.\]\s*\*\s*0\.045"),
-        ('War polStab × 0.55', r'w\.intensity\s*\*\s*0\.55', r"w\[.intensity.\]\s*\*\s*0\.55"),
-        ('War income × 0.30', r'w\.intensity\s*\*\s*0\.30', r"w\[.intensity.\]\s*\*\s*0\.30"),
-        ('War aiCap × 0.22', r'w\.intensity\s*\*\s*0\.22', r"w\[.intensity.\]\s*\*\s*0\.22"),
-        ('War aggressor income +0.08', r'w\.intensity\s*\*\s*0\.08', r"w\[.intensity.\]\s*\*\s*0\.08"),
-        ('War aggressor capConc +0.06', r'w\.intensity\s*\*\s*0\.06', r"w\[.intensity.\]\s*\*\s*0\.06"),
-    ]
-
-    for label, js_pat, py_pat in checks:
-        js_match = re.search(js_pat, js)
-        py_match = re.search(py_pat, py)
-        if js_match and py_match:
-            print(f'│  ✓  {label:<48s}  (both files)')
-        elif js_match and not py_match:
-            print(f'│  ✗  {label:<48s}  JS only — Python missing')
-            issues += 1
-        elif py_match and not js_match:
-            print(f'│  ✗  {label:<48s}  Python only — JS missing')
-            issues += 1
-        else:
-            print(f'│  ?  {label:<48s}  not found in either (regex may be wrong)')
-
-    # Specific number checks via direct extraction
-    print('\n┌─ EXACT NUMERIC PARAMETER VERIFICATION')
-    exact_checks = [
-        ('NUM_TURNS', r'const NUM_TURNS\s*=\s*(\d+)', r'NUM_TURNS\s*=\s*(\d+)'),
-        ('baseDeath value', r'const baseDeath\s*=\s*([\d.]+)', r'base_death\s*=\s*([\d.]+)'),
-        ('crisisScar decay', r'j\.crisisScar\s*\*=\s*([\d.]+)', r"j\['crisisScar'\]\s*\*=\s*([\d.]+)"),
-        ('institutionalCapacity floor', r'institutionalCapacity\s*=\s*Math\.max\(([\d.]+)', r"institutionalCapacity'\]\s*=\s*max\(([\d.]+)"),
-        ('Capital flow rate', r'flow\s*=\s*[a-zA-Z]*\s*\*\s*([\d.]+);?\s*//.*flow', None),  # may not exist in py
-    ]
-
-    for label, js_pat, py_pat in exact_checks:
-        js_m = re.search(js_pat, js)
-        py_m = re.search(py_pat, py) if py_pat else None
-        if js_m and py_m:
-            jsv, pyv = js_m.group(1), py_m.group(1)
-            ok = jsv == pyv or float(jsv) == float(pyv)
-            flag = '✓' if ok else '✗'
-            print(f'│  {flag}  {label:<35s}  JS={jsv}  Python={pyv}')
-            if not ok:
-                issues += 1
-        elif js_m:
-            print(f'│  ?  {label:<35s}  JS={js_m.group(1)}  (no Python comparison)')
-        else:
-            print(f'│  ?  {label:<35s}  not extracted')
-
-    print()
-    print('=' * 80)
-    if issues == 0:
-        print(f'AUDIT PASSED — no constant drift detected')
+# ─── Parse JS CONSTANT_DEFS ─────────────────────────────────────────
+def parse_js_constants(path):
+    """Extract CONSTANT_DEFS catalog from lifelines.jsx as a {key: {value, group, class}} dict."""
+    with open(path) as f:
+        code = f.read()
+    # Locate `const CONSTANT_DEFS = { ... };` and extract the brace block
+    m = re.search(r'const\s+CONSTANT_DEFS\s*=\s*\{', code)
+    if not m:
+        raise ValueError(f'Could not find `const CONSTANT_DEFS` in {path}')
+    start = m.end() - 1  # at the opening `{`
+    depth = 0
+    i = start
+    while i < len(code):
+        if code[i] == '{':
+            depth += 1
+        elif code[i] == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+        i += 1
     else:
-        print(f'AUDIT FAILED — {issues} issues')
-    print('=' * 80)
-    return issues
+        raise ValueError('Unbalanced braces in CONSTANT_DEFS')
+
+    body = code[start + 1: end - 1]  # contents between outer braces
+    # Strip line comments
+    body = re.sub(r'//.*?$', '', body, flags=re.MULTILINE)
+
+    constants = {}
+    # Each entry: KEY: { value: NUM, group: '<g>', label: ..., unit: ..., class: '<c>', ... }
+    # We extract value, group, class. Find each top-level key by tracking brace depth.
+    i = 0
+    while i < len(body):
+        # Skip whitespace
+        while i < len(body) and body[i] in ' \t\r\n,':
+            i += 1
+        # Read a key (identifier)
+        km = re.match(r'([A-Z_][A-Z0-9_]*)\s*:\s*\{', body[i:])
+        if not km:
+            break
+        key = km.group(1)
+        # Locate the closing brace of this entry
+        i += km.end()
+        depth = 1
+        entry_start = i
+        while i < len(body) and depth > 0:
+            if body[i] == '{':
+                depth += 1
+            elif body[i] == '}':
+                depth -= 1
+            i += 1
+        entry = body[entry_start: i - 1]
+
+        # Pull `value` (number), `group` (string), `class` (string) from the entry
+        value_m = re.search(r"value:\s*(-?[0-9]*\.?[0-9]+(?:e-?\d+)?)", entry)
+        group_m = re.search(r"group:\s*['\"]([a-zA-Z_]+)['\"]", entry)
+        class_m = re.search(r"class:\s*['\"]([A-Za-z]+)['\"]", entry)
+        if value_m and group_m and class_m:
+            constants[key] = {
+                'value': float(value_m.group(1)),
+                'group': group_m.group(1),
+                'class': class_m.group(1),
+            }
+        else:
+            missing = []
+            if not value_m: missing.append('value')
+            if not group_m: missing.append('group')
+            if not class_m: missing.append('class')
+            print(f'  WARN: JS CONSTANT_DEFS[{key}] missing fields: {", ".join(missing)}')
+
+    return constants
+
+
+# ─── Load Python CONSTANT_DEFS via import ───────────────────────────
+def load_py_constants(path):
+    spec = importlib.util.spec_from_file_location('sim_v5_audit', path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    raw = mod.CONSTANT_DEFS
+    out = {}
+    for key, defn in raw.items():
+        out[key] = {
+            'value': float(defn['value']),
+            'group': defn['group'],
+            'class': defn['class'],
+        }
+    return out
+
+
+# ─── Comparison ─────────────────────────────────────────────────────
+def main():
+    print('=' * 84)
+    print('LIFELINES — JS↔Python constants audit')
+    print('=' * 84)
+    print(f'  JS:     {JS_FILE}')
+    print(f'  Python: {PY_FILE}')
+    print()
+
+    if not os.path.exists(JS_FILE):
+        print(f'  ✗ JS file not found at {JS_FILE}')
+        return 1
+    if not os.path.exists(PY_FILE):
+        print(f'  ✗ Python file not found at {PY_FILE}')
+        return 1
+
+    try:
+        js_consts = parse_js_constants(JS_FILE)
+    except Exception as e:
+        print(f'  ✗ Failed to parse JS CONSTANT_DEFS: {e}')
+        return 1
+    try:
+        py_consts = load_py_constants(PY_FILE)
+    except Exception as e:
+        print(f'  ✗ Failed to load Python CONSTANT_DEFS: {e}')
+        return 1
+
+    print(f'  JS catalog size:     {len(js_consts)} constants')
+    print(f'  Python catalog size: {len(py_consts)} constants')
+    print()
+
+    issues = []
+
+    # Missing keys
+    js_only = set(js_consts) - set(py_consts)
+    py_only = set(py_consts) - set(js_consts)
+    for key in sorted(js_only):
+        issues.append(('missing-py', key, f'in JS, missing in Python'))
+    for key in sorted(py_only):
+        issues.append(('missing-js', key, f'in Python, missing in JS'))
+
+    # Common keys: compare value, group, class
+    common = sorted(set(js_consts) & set(py_consts))
+    value_mismatches = []
+    group_mismatches = []
+    class_mismatches = []
+    for key in common:
+        j = js_consts[key]
+        p = py_consts[key]
+        # Float compare with tolerance to allow for representation noise
+        if abs(j['value'] - p['value']) > 1e-9:
+            value_mismatches.append((key, j['value'], p['value']))
+        if j['group'] != p['group']:
+            group_mismatches.append((key, j['group'], p['group']))
+        if j['class'] != p['class']:
+            class_mismatches.append((key, j['class'], p['class']))
+
+    # ─── Report ─────────────────────────────────────────────────────
+    if not issues and not value_mismatches and not group_mismatches and not class_mismatches:
+        print(f'  ✓ All {len(common)} shared constants match (value + group + class)')
+        print()
+        print('=' * 84)
+        print('AUDIT PASSED — JS and Python constants are in sync')
+        print('=' * 84)
+        return 0
+
+    if js_only:
+        print(f'  ✗ {len(js_only)} key(s) in JS but missing in Python:')
+        for key in sorted(js_only):
+            print(f'      - {key}')
+        print()
+    if py_only:
+        print(f'  ✗ {len(py_only)} key(s) in Python but missing in JS:')
+        for key in sorted(py_only):
+            print(f'      - {key}')
+        print()
+    if value_mismatches:
+        print(f'  ✗ {len(value_mismatches)} value mismatch(es):')
+        print(f'      {"KEY":<32}  {"JS":>14}  {"PY":>14}  diff')
+        for key, jv, pv in value_mismatches:
+            print(f'      {key:<32}  {jv:>14.6g}  {pv:>14.6g}  Δ={(jv-pv):+.4g}')
+        print()
+    if group_mismatches:
+        print(f'  ✗ {len(group_mismatches)} group mismatch(es):')
+        for key, jg, pg in group_mismatches:
+            print(f'      {key:<32}  JS={jg:<12}  PY={pg}')
+        print()
+    if class_mismatches:
+        print(f'  ✗ {len(class_mismatches)} class mismatch(es):')
+        for key, jc, pc in class_mismatches:
+            print(f'      {key:<32}  JS={jc:<12}  PY={pc}')
+        print()
+
+    n_total = (len(js_only) + len(py_only) + len(value_mismatches)
+               + len(group_mismatches) + len(class_mismatches))
+    print('=' * 84)
+    print(f'AUDIT FAILED — {n_total} issue(s) found')
+    print('=' * 84)
+    return 1
 
 
 if __name__ == '__main__':
-    sys.exit(compare_params())
+    sys.exit(main())

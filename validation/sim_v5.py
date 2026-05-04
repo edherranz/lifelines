@@ -1,25 +1,107 @@
-"""LIFELINES v0.5 — four-bloc simulation prototype.
+"""LIFELINES v0.6 — four-bloc simulation prototype (Python port).
 
-Adds the Mosaic bloc (Africa + Middle East + adjacent developing regions).
-Geographic mapping:
-  OM     = Americas (USA-led)
-  SC     = Europe (EU + UK + Nordic)
-  DO     = China-Russia bloc
-  Mosaic = Africa + ME + South Asia (the resource-rich periphery)
+Mirrors the JavaScript simulation in lifelines.jsx line-for-line.
+As of v0.6, the model's numeric constants are centralized in CONSTANT_DEFS
+(see below) instead of being inlined into the dynamics functions. Every
+top-level simulation function — step_bloc, compute_interactions, run_world,
+run_world_batch — accepts an optional `K` parameter (a dict of constants).
+Defaults to DEFAULT_CONSTANTS, which is auto-derived from CONSTANT_DEFS.
+
+Geographic mapping (informational only — the model doesn't use country labels):
+  OM     = Open Market         (Liberal market economy)
+  SC     = Social Compact      (Coordinated market economy)
+  DO     = Directed Order      (Authoritarian state capitalism)
+  Mosaic = Resource-rich periphery (Fragmented developing region)
 
 Mosaic-specific dynamics:
   - Low starting capability, low starting median income
-  - Massive minerals + solar/wind endowment
-  - Weak chip manufacturing (chip endowment 0.4)
+  - Massive minerals + solar/wind endowment, weak chip manufacturing
   - Food security as a mortality driver
   - Capital inflows mostly extractive (smaller multiplier on income)
   - Higher coercion vulnerability
-  - Variable political responsiveness across the bloc
 """
 
 import math
 import random
 import statistics
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODEL CONSTANTS
+# Every numeric tunable in the simulation, with class, rationale, and range.
+# Mirrors CONSTANT_DEFS in lifelines.jsx — keys and values must match.
+# CLASS values:
+#   Empirical  — derived from real-world data (cite-able)
+#   Calibrated — chosen so the model hits real-world life-expectancy targets
+#   Structural — modeling choice, defensible but not derivable from data
+# ═══════════════════════════════════════════════════════════════════════════
+CONSTANT_DEFS = {
+    # ─── Capability dynamics ───
+    'AI_CEILING_FACTOR':        {'value': 4.0,    'group': 'capability',  'class': 'Structural'},
+    'ROBOT_CEILING_FACTOR':     {'value': 3.0,    'group': 'capability',  'class': 'Structural'},
+    'AI_GROWTH_BASE':           {'value': 0.06,   'group': 'capability',  'class': 'Calibrated'},
+    'ROBOT_GROWTH_BASE':        {'value': 0.04,   'group': 'capability',  'class': 'Calibrated'},
+    'ALIGNMENT_GROWTH_DRAG':    {'value': 0.5,    'group': 'capability',  'class': 'Structural'},
+    # ─── Capability dividends ───
+    'MEDICAL_DIVIDEND_FACTOR':       {'value': 0.30, 'group': 'dividends', 'class': 'Structural'},
+    'PRODUCTIVITY_DIVIDEND_FACTOR':  {'value': 0.40, 'group': 'dividends', 'class': 'Structural'},
+    'SHARE_TO_SOCIETY_CONC_DRAG':    {'value': 0.7,  'group': 'dividends', 'class': 'Structural'},
+    # ─── External shocks ───
+    'SHOCK_PROB':           {'value': 0.030, 'group': 'shocks', 'class': 'Structural'},
+    'FOOD_SHOCK_BASE_PROB': {'value': 0.015, 'group': 'shocks', 'class': 'Structural'},
+    # ─── Mortality ───
+    'BASE_DEATH':                  {'value': 0.0125, 'group': 'mortality', 'class': 'Empirical'},
+    'MEDICAL_OFFSET_CAP':          {'value': 0.004,  'group': 'mortality', 'class': 'Calibrated'},
+    'POVERTY_DEATH_SCALE':         {'value': 0.012,  'group': 'mortality', 'class': 'Calibrated'},
+    'POVERTY_THRESHOLD':           {'value': 0.65,   'group': 'mortality', 'class': 'Structural'},
+    'DESPAIR_DEATH_SCALE':         {'value': 0.006,  'group': 'mortality', 'class': 'Calibrated'},
+    'DESPAIR_UBI_DAMP':            {'value': 0.95,   'group': 'mortality', 'class': 'Structural'},
+    'VIOLENCE_DEATH_SCALE':        {'value': 0.013,  'group': 'mortality', 'class': 'Calibrated'},
+    'ENV_DEATH_ALIGN_THRESHOLD':   {'value': 0.5,    'group': 'mortality', 'class': 'Structural'},
+    'ENV_DEATH_SCALE':             {'value': 0.010,  'group': 'mortality', 'class': 'Calibrated'},
+    'ALIGN_FAIL_CAP_THRESHOLD':    {'value': 1.5,    'group': 'mortality', 'class': 'Structural'},
+    'ALIGN_FAIL_ALIGN_THRESHOLD':  {'value': 0.4,    'group': 'mortality', 'class': 'Structural'},
+    'ALIGN_FAIL_SCALE':            {'value': 0.012,  'group': 'mortality', 'class': 'Structural'},
+    'FOOD_INSEC_INCOME_THRESHOLD': {'value': 0.65,   'group': 'mortality', 'class': 'Structural'},
+    'FOOD_INSEC_AGRI_THRESHOLD':   {'value': 1.2,    'group': 'mortality', 'class': 'Structural'},
+    'FOOD_INSEC_SCALE':            {'value': 0.012,  'group': 'mortality', 'class': 'Calibrated'},
+    'STAT_CRED_THRESHOLD':         {'value': 0.30,   'group': 'mortality', 'class': 'Structural'},
+    'STAT_CRED_SCALE':             {'value': 0.008,  'group': 'mortality', 'class': 'Calibrated'},
+    'DRIVER_CAP':                  {'value': 0.027,  'group': 'mortality', 'class': 'Structural'},
+    'MORT_FLOOR':                  {'value': 0.005,  'group': 'mortality', 'class': 'Structural'},
+    # ─── War ───
+    'WAR_T_MIN':                  {'value': 15,    'group': 'war', 'class': 'Structural'},
+    'WAR_AGG_BASE_SCALE':         {'value': 0.15,  'group': 'war', 'class': 'Structural'},
+    'WAR_PROB_SCALE':             {'value': 0.04,  'group': 'war', 'class': 'Calibrated'},
+    'WAR_VULN_CAPGAP_FACTOR':     {'value': 0.5,   'group': 'war', 'class': 'Structural'},
+    'WAR_VULN_POLSTAB_FACTOR':    {'value': 0.4,   'group': 'war', 'class': 'Structural'},
+    'WAR_VULN_MINERAL_FACTOR':    {'value': 0.3,   'group': 'war', 'class': 'Structural'},
+    'WAR_TARGET_MORTALITY':       {'value': 0.045, 'group': 'war', 'class': 'Structural'},
+    'WAR_AGG_MORTALITY':          {'value': 0.010, 'group': 'war', 'class': 'Structural'},
+    'WAR_TARGET_POL_FACTOR':      {'value': 0.55,  'group': 'war', 'class': 'Structural'},
+    'WAR_TARGET_INCOME_FACTOR':   {'value': 0.30,  'group': 'war', 'class': 'Structural'},
+    'WAR_TARGET_AICAP_FACTOR':    {'value': 0.22,  'group': 'war', 'class': 'Structural'},
+    'WAR_AGG_INCOME_BOOST':       {'value': 0.08,  'group': 'war', 'class': 'Structural'},
+    'WAR_AGG_CONC_BOOST':         {'value': 0.06,  'group': 'war', 'class': 'Structural'},
+    # ─── Coercion ───
+    'COERCION_PROB':              {'value': 0.03, 'group': 'coercion', 'class': 'Structural'},
+    'COERCION_GAP_THRESHOLD':     {'value': 0.4,  'group': 'coercion', 'class': 'Structural'},
+    # ─── Inter-bloc flows ───
+    'CAPITAL_FLOW_BASE':          {'value': 0.04,  'group': 'flows', 'class': 'Structural'},
+    'CAPITAL_FLOW_MAX':           {'value': 0.05,  'group': 'flows', 'class': 'Structural'},
+    'TALENT_FLOW_BASE':           {'value': 0.003, 'group': 'flows', 'class': 'Structural'},
+    'TALENT_FLOW_MAX':            {'value': 0.02,  'group': 'flows', 'class': 'Structural'},
+    'SPILLOVER_LEAKAGE_BASE':     {'value': 0.005, 'group': 'flows', 'class': 'Structural'},
+    # ─── Crisis dynamics ───
+    'CRISIS_THRESHOLD':           {'value': 0.40,  'group': 'crisis', 'class': 'Structural'},
+    'CRISIS_PROB':                {'value': 0.10,  'group': 'crisis', 'class': 'Structural'},
+    'CATASTROPHE_PROB':           {'value': 0.008, 'group': 'crisis', 'class': 'Structural'},
+    'CRISIS_SCAR_DECAY':          {'value': 0.985, 'group': 'crisis', 'class': 'Structural'},
+}
+
+# Convenience: extract just the values for use as the K parameter
+DEFAULT_CONSTANTS = {k: v['value'] for k, v in CONSTANT_DEFS.items()}
+
 
 # ─── Bloc presets ─────────────────────────────────────────────────
 OPEN_MARKET = {
@@ -44,15 +126,12 @@ MOSAIC = {
 }
 
 ENDOWMENTS = {
-    # infrastructure: structural development level (capital per worker, roads, healthcare,
-    # education, grid). Multiplies labor income — keeps Mosaic structurally below developed blocs.
     'OM':     {'energy': 1.0, 'chips': 1.2, 'minerals': 0.7, 'agriculture': 1.1, 'infrastructure': 1.00},
     'SC':     {'energy': 1.1, 'chips': 0.8, 'minerals': 0.6, 'agriculture': 0.9, 'infrastructure': 1.05},
     'DO':     {'energy': 0.9, 'chips': 1.0, 'minerals': 1.4, 'agriculture': 1.0, 'infrastructure': 0.85},
     'Mosaic': {'energy': 1.4, 'chips': 0.4, 'minerals': 1.8, 'agriculture': 0.8, 'infrastructure': 0.72},
 }
 
-# Initial conditions per bloc — Mosaic starts substantially behind
 INITIAL_CONDITIONS = {
     'OM':     {'aiCap': 0.10, 'robotCap': 0.04, 'medianIncome': 1.00, 'unemployment': 0.05,
                'gini': 0.40, 'polStability': 0.70, 'capitalConc': 0.45},
@@ -65,16 +144,18 @@ INITIAL_CONDITIONS = {
 }
 
 REGIME_NAMES = {
-    'OM': 'Open Market (Americas)',
-    'SC': 'Social Compact (Europe)',
-    'DO': 'Directed Order (China-Russia)',
-    'Mosaic': 'Mosaic (Africa + ME + S.Asia)',
+    'OM': 'Open Market',
+    'SC': 'Social Compact',
+    'DO': 'Directed Order',
+    'Mosaic': 'Mosaic',
 }
 KEYS = ['OM', 'SC', 'DO', 'Mosaic']
 
 
-def stat_credibility_penalty(n):
-    return max(0, 0.30 - n['politicalResp']) * 0.008
+def stat_credibility_penalty(n, K=None):
+    if K is None:
+        K = DEFAULT_CONSTANTS
+    return max(0, K['STAT_CRED_THRESHOLD'] - n['politicalResp']) * K['STAT_CRED_SCALE']
 
 
 def init_bloc(key, rules, rng):
@@ -95,14 +176,16 @@ def init_bloc(key, rules, rng):
     }
 
 
-def step_bloc(j, t, rng, ext, ai_shock_active=True):
+def step_bloc(j, t, rng, ext, ai_shock_active=True, K=None):
+    if K is None:
+        K = DEFAULT_CONSTANTS
     n = j['n']
-    AI_CEILING = 4.0 * j['endowments']['energy']
-    ROBOT_CEILING = 3.0 * j['endowments']['chips']
+    AI_CEILING = K['AI_CEILING_FACTOR'] * j['endowments']['energy']
+    ROBOT_CEILING = K['ROBOT_CEILING_FACTOR'] * j['endowments']['chips']
 
     if ai_shock_active:
-        ai_r = n['aiGrowth'] * 0.06 * (1 - 0.5 * n['alignment'])
-        robot_r = n['robotGrowth'] * 0.04 * (1 - 0.5 * n['alignment'])
+        ai_r = n['aiGrowth'] * K['AI_GROWTH_BASE'] * (1 - K['ALIGNMENT_GROWTH_DRAG'] * n['alignment'])
+        robot_r = n['robotGrowth'] * K['ROBOT_GROWTH_BASE'] * (1 - K['ALIGNMENT_GROWTH_DRAG'] * n['alignment'])
         j['aiCap'] += j['aiCap'] * ai_r * (1 - j['aiCap'] / AI_CEILING) * (1 + 0.5 * (rng.random() - 0.5))
         j['robotCap'] += j['robotCap'] * robot_r * (1 - j['robotCap'] / ROBOT_CEILING) * (1 + 0.5 * (rng.random() - 0.5))
         j['aiCap'] += ext.get('aiCap_boost', 0)
@@ -120,19 +203,19 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
     total_cap = j['aiCap'] + j['robotCap']
 
     macro_shock = 0
-    if rng.random() < 0.030:
+    if rng.random() < K['SHOCK_PROB']:
         macro_shock = 0.10 + rng.random() * 0.25
     macro_shock += ext.get('shock_modifier', 0)
 
-    # Food security shocks: hit Mosaic harder due to low agriculture endowment
     food_vuln = max(0, 0.85 - j['endowments']['agriculture']) * 0.5
-    if rng.random() < (0.015 + food_vuln * 0.04):
+    if rng.random() < (K['FOOD_SHOCK_BASE_PROB'] + food_vuln * 0.04):
         food_shock = 0.05 + rng.random() * 0.15
         macro_shock += food_shock
 
-    share_to_society = ((1 - j['capitalConc'] * 0.7) * (0.3 + 0.7 * n['alignment']) * j['institutionalCapacity'])
-    medical_dividend = total_cap * 0.30 * share_to_society
-    productivity_dividend = total_cap * 0.40 * share_to_society
+    share_to_society = ((1 - j['capitalConc'] * K['SHARE_TO_SOCIETY_CONC_DRAG'])
+                        * (0.3 + 0.7 * n['alignment']) * j['institutionalCapacity'])
+    medical_dividend = total_cap * K['MEDICAL_DIVIDEND_FACTOR'] * share_to_society
+    productivity_dividend = total_cap * K['PRODUCTIVITY_DIVIDEND_FACTOR'] * share_to_society
 
     capability_pressure = math.tanh(total_cap / 2.5)
     raw_displacement = capability_pressure * 0.55
@@ -156,7 +239,6 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
     j['capitalConc'] = 0.78 * j['capitalConc'] + 0.22 * target_conc + (rng.random() - 0.5) * 0.025
     j['capitalConc'] = max(0.10, min(0.97, j['capitalConc']))
 
-    # Income — Mosaic has lower benefit from capital inflows (extraction premise)
     extraction_factor = 0.05 if j['key'] != 'Mosaic' else 0.015
     infra = j['endowments'].get('infrastructure', 1.0)
     labor_income = (1 - j['unemployment']) * infra * (1 + productivity_dividend * 0.4)
@@ -195,35 +277,34 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
     j['polStability'] = 0.70 * j['polStability'] + 0.30 * target_stability + bistable_pull + (rng.random() - 0.5) * 0.04
     j['polStability'] = max(0, min(1, j['polStability']))
 
-    if j['polStability'] < 0.40 and rng.random() < 0.10:
+    if j['polStability'] < K['CRISIS_THRESHOLD'] and rng.random() < K['CRISIS_PROB']:
         sev = 0.5 + rng.random() * 0.30
         j['polStability'] *= sev
         j['crisisScar'] += 0.10
-    if rng.random() < 0.008:
+    if rng.random() < K['CATASTROPHE_PROB']:
         j['polStability'] *= 0.4 + rng.random() * 0.3
         j['unemployment'] = min(0.55, j['unemployment'] + 0.10)
         j['crisisScar'] += 0.20
 
-    j['crisisScar'] *= 0.985
+    j['crisisScar'] *= K['CRISIS_SCAR_DECAY']
     if j['polStability'] < 0.40:
         j['institutionalCapacity'] *= 0.99
     elif j['polStability'] > 0.60 and j['institutionalCapacity'] < 1.0:
         j['institutionalCapacity'] = min(1.0, j['institutionalCapacity'] * 1.005)
     j['institutionalCapacity'] = max(0.3, j['institutionalCapacity'])
 
-    # War effects
     war_mortality = 0
     war_target = ext.get('warAsTarget')
     war_aggressor = ext.get('warAsAggressor')
     if war_target:
         w = war_target
-        j['polStability'] *= (1 - w['intensity'] * 0.55)
-        j['medianIncome'] *= (1 - w['intensity'] * 0.30)
-        j['aiCap'] *= (1 - w['intensity'] * 0.22)
-        j['robotCap'] *= (1 - w['intensity'] * 0.22)
+        j['polStability'] *= (1 - w['intensity'] * K['WAR_TARGET_POL_FACTOR'])
+        j['medianIncome'] *= (1 - w['intensity'] * K['WAR_TARGET_INCOME_FACTOR'])
+        j['aiCap'] *= (1 - w['intensity'] * K['WAR_TARGET_AICAP_FACTOR'])
+        j['robotCap'] *= (1 - w['intensity'] * K['WAR_TARGET_AICAP_FACTOR'])
         j['institutionalCapacity'] *= (1 - w['intensity'] * 0.15)
         j['crisisScar'] += w['intensity'] * 0.45
-        war_mortality = w['intensity'] * 0.045
+        war_mortality = w['intensity'] * K['WAR_TARGET_MORTALITY']
         j['unemployment'] = min(0.55, j['unemployment'] + w['intensity'] * 0.15)
         if 'wars_as_target' not in j: j['wars_as_target'] = []
         j['wars_as_target'].append((t, w['aggressor'], w['intensity']))
@@ -231,10 +312,10 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
         w = war_aggressor
         j['polStability'] *= (1 - w['intensity'] * 0.10)
         j['aiCap'] *= (1 - w['intensity'] * 0.05)
-        j['medianIncome'] *= (1 + w['intensity'] * 0.08)
-        j['capitalConc'] = min(0.97, j['capitalConc'] + w['intensity'] * 0.06)
+        j['medianIncome'] *= (1 + w['intensity'] * K['WAR_AGG_INCOME_BOOST'])
+        j['capitalConc'] = min(0.97, j['capitalConc'] + w['intensity'] * K['WAR_AGG_CONC_BOOST'])
         j['crisisScar'] += w['intensity'] * 0.10
-        war_mortality = w['intensity'] * 0.010
+        war_mortality = w['intensity'] * K['WAR_AGG_MORTALITY']
         if 'wars_as_aggressor' not in j: j['wars_as_aggressor'] = []
         j['wars_as_aggressor'].append((t, w['target'], w['intensity']))
 
@@ -244,25 +325,25 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
     j['robotCap'] = max(0.01, j['robotCap'])
     j['institutionalCapacity'] = max(0.3, j['institutionalCapacity'])
 
-    base_death = 0.0125
-    medical_offset = -min(0.004, medical_dividend * 0.0015)
-    poverty_death = max(0, 0.65 - j['medianIncome']) * 0.012
-    despair_death = j['unemployment'] * max(0, 1 - n['ubiLevel'] * 0.95) * 0.006
-    violence_death = max(0, 1 - j['polStability']) * 0.013
-    env_death = (1 - n['energyDist']) * max(0, 0.5 - n['alignment']) * 0.010
-    alignment_fail = max(0, total_cap - 1.5) * max(0, 0.4 - n['alignment']) * 0.012
+    base_death = K['BASE_DEATH']
+    medical_offset = -min(K['MEDICAL_OFFSET_CAP'], medical_dividend * 0.0015)
+    poverty_death = max(0, K['POVERTY_THRESHOLD'] - j['medianIncome']) * K['POVERTY_DEATH_SCALE']
+    despair_death = j['unemployment'] * max(0, 1 - n['ubiLevel'] * K['DESPAIR_UBI_DAMP']) * K['DESPAIR_DEATH_SCALE']
+    violence_death = max(0, 1 - j['polStability']) * K['VIOLENCE_DEATH_SCALE']
+    env_death = (1 - n['energyDist']) * max(0, K['ENV_DEATH_ALIGN_THRESHOLD'] - n['alignment']) * K['ENV_DEATH_SCALE']
+    alignment_fail = (max(0, total_cap - K['ALIGN_FAIL_CAP_THRESHOLD'])
+                      * max(0, K['ALIGN_FAIL_ALIGN_THRESHOLD'] - n['alignment'])
+                      * K['ALIGN_FAIL_SCALE'])
+    food_insec = (max(0, K['FOOD_INSEC_INCOME_THRESHOLD'] - j['medianIncome'])
+                  * max(0, K['FOOD_INSEC_AGRI_THRESHOLD'] - j['endowments']['agriculture'])
+                  * K['FOOD_INSEC_SCALE'])
 
-    # Food insecurity (Mosaic-relevant) — low income + low agriculture endowment
-    food_insec = (max(0, 0.65 - j['medianIncome'])
-                  * max(0, 1.2 - j['endowments']['agriculture'])
-                  * 0.012)
-
-    unreported = stat_credibility_penalty(n)
+    unreported = stat_credibility_penalty(n, K)
 
     raw_drivers = poverty_death + despair_death + violence_death + env_death + alignment_fail + food_insec
-    capped_drivers = 0.027 * (1 - math.exp(-raw_drivers / 0.027))
+    capped_drivers = K['DRIVER_CAP'] * (1 - math.exp(-raw_drivers / K['DRIVER_CAP']))
 
-    mort_rate = max(0.005, base_death + medical_offset + capped_drivers + unreported + war_mortality)
+    mort_rate = max(K['MORT_FLOOR'], base_death + medical_offset + capped_drivers + unreported + war_mortality)
     j['cumulativeMortality'] += mort_rate
 
     j['history'].append({
@@ -274,7 +355,9 @@ def step_bloc(j, t, rng, ext, ai_shock_active=True):
     })
 
 
-def compute_interactions(blocs, t, rng):
+def compute_interactions(blocs, t, rng, K=None):
+    if K is None:
+        K = DEFAULT_CONSTANTS
     inputs = {k: {'capital_flow': 0, 'talent_flow': 0,
                   'aiCap_boost': 0, 'robotCap_boost': 0,
                   'shock_modifier': 0} for k in blocs}
@@ -291,15 +374,14 @@ def compute_interactions(blocs, t, rng):
             openness_src = 0.3 + 0.7 * jSrc['n']['energyDist']
             openness_dst = 0.3 + 0.7 * jDst['n']['energyDist']
             stab_factor = (1 - jSrc['polStability']) * 0.5 + 0.5
-            # Resource attraction: capital also flows to high-mineral blocs (extraction motive)
             resource_pull = 1.0 + max(0, jDst['endowments']['minerals'] - 1.0) * 0.4
-            flow = (tax_diff * 0.4 + wealth_diff * 0.3) * 0.04 * openness_src * openness_dst * stab_factor * resource_pull
+            flow = (tax_diff * 0.4 + wealth_diff * 0.3) * K['CAPITAL_FLOW_BASE'] * openness_src * openness_dst * stab_factor * resource_pull
             flow *= jSrc['aiCap'] / max(0.5, jDst['aiCap'])
-            flow = max(0, min(0.05, flow))
+            flow = max(0, min(K['CAPITAL_FLOW_MAX'], flow))
             inputs[src]['capital_flow'] -= flow
             inputs[dst]['capital_flow'] += flow
 
-    # Talent migration — MUCH stronger from Mosaic to anywhere developed (brain drain)
+    # Talent migration
     for src in keys:
         for dst in keys:
             if src == dst: continue
@@ -312,8 +394,8 @@ def compute_interactions(blocs, t, rng):
                     + max(0, jDst['polStability'] - 0.5) * 0.4)
             friction = 1 - jSrc['n']['politicalResp'] * 0.5
             reception = max(0.1, min(1.0, 1 - max(0, jDst['unemployment'] - 0.20) * 2))
-            flow = push * pull * 0.003 * (1 - friction * 0.5) * reception
-            flow = max(0, min(0.02, flow))
+            flow = push * pull * K['TALENT_FLOW_BASE'] * (1 - friction * 0.5) * reception
+            flow = max(0, min(K['TALENT_FLOW_MAX'], flow))
             inputs[src]['talent_flow'] -= flow
             inputs[dst]['talent_flow'] += flow
 
@@ -324,17 +406,17 @@ def compute_interactions(blocs, t, rng):
             jSrc = blocs[src]; jDst = blocs[dst]
             cap_diff_ai = max(0, jSrc['aiCap'] - jDst['aiCap'])
             cap_diff_robot = max(0, jSrc['robotCap'] - jDst['robotCap'])
-            leakage = (1 - jSrc['n']['alignment'] * 0.3) * 0.005
+            leakage = (1 - jSrc['n']['alignment'] * 0.3) * K['SPILLOVER_LEAKAGE_BASE']
             absorption = 0.5 + jDst['n']['retraining'] * 0.5
             inputs[dst]['aiCap_boost'] += cap_diff_ai * leakage * absorption
             inputs[dst]['robotCap_boost'] += cap_diff_robot * leakage * absorption
 
-    # Coercion — same logic, but with 4 blocs more pairs and Mosaic is most-vulnerable
-    if rng.random() < 0.03 and t > 20:
+    # Coercion
+    if rng.random() < K['COERCION_PROB'] and t > 20:
         pairs = [(a, b) for a in keys for b in keys if a < b]
         gaps = [(abs(blocs[a]['aiCap'] - blocs[b]['aiCap']), a, b) for a, b in pairs]
         gaps.sort(reverse=True)
-        if gaps[0][0] > 0.4:
+        if gaps[0][0] > K['COERCION_GAP_THRESHOLD']:
             _, a, b = gaps[0]
             agg_score = lambda j: j['aiCap'] * (1 - j['n']['alignment'])
             aggressor, target = (a, b) if agg_score(blocs[a]) > agg_score(blocs[b]) else (b, a)
@@ -343,9 +425,9 @@ def compute_interactions(blocs, t, rng):
             inputs[target]['shock_modifier'] += target_damage
             inputs[aggressor]['shock_modifier'] += agg_cost
 
-    # War — capability + chips + low-alignment + low-political-responsiveness
+    # War
     inputs_war = {k: {'as_target': None, 'as_aggressor': None} for k in keys}
-    if t > 15:
+    if t > K['WAR_T_MIN']:
         best_prob = 0
         best_pair = None
         best_intensity_cap = 0
@@ -358,12 +440,12 @@ def compute_interactions(blocs, t, rng):
                               * (1 - jSrc['n']['politicalResp'])
                               * jSrc['endowments']['chips']
                               * jSrc['institutionalCapacity']
-                              * 0.15)
+                              * K['WAR_AGG_BASE_SCALE'])
                 cap_gap = max(0, 1 - jDst['aiCap'] / max(0.5, jSrc['aiCap']))
-                target_vuln = (cap_gap * 0.5
-                               + max(0, 0.6 - jDst['polStability']) * 0.4
-                               + max(0, jDst['endowments']['minerals'] - 0.8) * 0.3)
-                war_prob = aggression * target_vuln * 0.04
+                target_vuln = (cap_gap * K['WAR_VULN_CAPGAP_FACTOR']
+                               + max(0, 0.6 - jDst['polStability']) * K['WAR_VULN_POLSTAB_FACTOR']
+                               + max(0, jDst['endowments']['minerals'] - 0.8) * K['WAR_VULN_MINERAL_FACTOR'])
+                war_prob = aggression * target_vuln * K['WAR_PROB_SCALE']
                 if war_prob > best_prob:
                     best_prob = war_prob
                     best_pair = (src, dst)
@@ -380,7 +462,9 @@ def compute_interactions(blocs, t, rng):
     return inputs
 
 
-def run_world(rule_overrides=None, seed=42, num_turns=150, ai_shock_active=True):
+def run_world(rule_overrides=None, seed=42, num_turns=150, ai_shock_active=True, K=None):
+    if K is None:
+        K = DEFAULT_CONSTANTS
     rng = random.Random(seed)
     rules = {
         'OM': {**OPEN_MARKET, **(rule_overrides or {}).get('OM', {})},
@@ -390,9 +474,9 @@ def run_world(rule_overrides=None, seed=42, num_turns=150, ai_shock_active=True)
     }
     blocs = {k: init_bloc(k, rules[k], rng) for k in rules}
     for t in range(1, num_turns + 1):
-        inputs = compute_interactions(blocs, t, rng)
+        inputs = compute_interactions(blocs, t, rng, K=K)
         for k in blocs:
-            step_bloc(blocs[k], t, rng, inputs[k], ai_shock_active=ai_shock_active)
+            step_bloc(blocs[k], t, rng, inputs[k], ai_shock_active=ai_shock_active, K=K)
 
     outcomes = {}
     for k, j in blocs.items():
@@ -411,8 +495,9 @@ def run_world(rule_overrides=None, seed=42, num_turns=150, ai_shock_active=True)
     return {'outcomes': outcomes}
 
 
-def run_world_batch(n=50, rule_overrides=None, seed_base=1000, ai_shock_active=True):
-    return [run_world(rule_overrides, seed_base + i * 7919, ai_shock_active=ai_shock_active) for i in range(n)]
+def run_world_batch(n=50, rule_overrides=None, seed_base=1000, ai_shock_active=True, K=None):
+    return [run_world(rule_overrides, seed_base + i * 7919, ai_shock_active=ai_shock_active, K=K)
+            for i in range(n)]
 
 
 def summarize_batch(results, label=''):
@@ -440,25 +525,11 @@ def summarize_batch(results, label=''):
 
 if __name__ == '__main__':
     print("=" * 110)
-    print("LIFELINES v0.5 — four-bloc simulation, N=50")
+    print("LIFELINES v0.6 — four-bloc simulation, N=50 (default constants)")
     print("=" * 110)
 
-    print("\nReal-world baseline targets:")
-    print("  USA ~78  ·  Nordic ~83  ·  China-system ~71-76  ·  sub-Saharan Africa ~62-66")
     summarize_batch(run_world_batch(50, ai_shock_active=False),
-        '┌─ BASELINE (no AI shock) ──────────────────────────────────────────────────────────────────────────')
+        '┌─ BASELINE (no AI shock) ─────────────────────────────────────────────────────────────────────────')
 
     summarize_batch(run_world_batch(50, ai_shock_active=True),
         '┌─ DEFAULT (AI shock active) ──────────────────────────────────────────────────────────────────────')
-
-    summarize_batch(run_world_batch(50, rule_overrides={
-        'Mosaic': {'capitalTax': 50, 'retraining': 70, 'energyDist': 70, 'politicalResp': 60, 'alignment': 55}
-    }), '┌─ COUNTERFACTUAL: Mosaic builds capacity (Africa develops with rents from extraction) ───────────')
-
-    summarize_batch(run_world_batch(50, rule_overrides={
-        'OM': {'capitalTax': 45, 'laborProt': 70, 'alignment': 60, 'ubiLevel': 35, 'retraining': 60}
-    }), '┌─ COUNTERFACTUAL: Americas adopt EU-style protections ───────────────────────────────────────────')
-
-    summarize_batch(run_world_batch(50, rule_overrides={
-        'DO': {'politicalResp': 55, 'energyDist': 45}
-    }), '┌─ COUNTERFACTUAL: China-Russia bloc opens politically ───────────────────────────────────────────')

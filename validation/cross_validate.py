@@ -18,19 +18,21 @@ def extract_top_level(code, decl_pattern):
         return None
     start = m.start()
     i = m.end()
-    while i < len(code) and code[i] not in '{=':
-        i += 1
-    if i >= len(code): return None
-    if code[i] == '=':
-        depth = 0
-        i += 1
-        while i < len(code):
-            if code[i] in '({[': depth += 1
-            elif code[i] in ')}]': depth -= 1
-            elif code[i] == ';' and depth == 0:
-                return code[start:i+1]
+    # If declaration starts with `function`, skip past param list (...) first,
+    # otherwise default-parameter `=` confuses the look-ahead.
+    is_function = code[start:m.end()].lstrip().startswith('function')
+    if is_function:
+        # The regex pattern ends with `\(`, so m.end() is already past the open paren.
+        # Balance parens starting at depth=1 to find the close.
+        depth = 1
+        while i < len(code) and depth > 0:
+            if code[i] == '(': depth += 1
+            elif code[i] == ')': depth -= 1
             i += 1
-    else:
+        # Now scan for the body brace
+        while i < len(code) and code[i] != '{':
+            i += 1
+        if i >= len(code): return None
         depth = 1
         i += 1
         while i < len(code) and depth > 0:
@@ -38,6 +40,15 @@ def extract_top_level(code, decl_pattern):
             elif code[i] == '}': depth -= 1
             i += 1
         return code[start:i]
+    # Const/let/var declaration: regex ended at `=`, balance to terminating `;`
+    depth = 0
+    while i < len(code):
+        if code[i] in '({[': depth += 1
+        elif code[i] in ')}]': depth -= 1
+        elif code[i] == ';' and depth == 0:
+            return code[start:i+1]
+        i += 1
+    return None
 
 
 def build_js_runner(scenarios):
@@ -45,7 +56,7 @@ def build_js_runner(scenarios):
     with open(JS_FILE) as f:
         code = f.read()
     fns = ['mulberry32', 'statCredibilityPenalty', 'stepBloc', 'computeInteractions', 'runWorld']
-    consts = ['BLOCS', 'BLOC_KEYS']
+    consts = ['BLOCS', 'BLOC_KEYS', 'CONSTANT_DEFS', 'DEFAULT_CONSTANTS']
     extracted = []
     for fn in fns:
         block = extract_top_level(code, rf'function\s+{fn}\s*\(')

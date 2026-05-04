@@ -14,11 +14,20 @@ from copy import deepcopy
 N_RUNS = 200  # per scenario
 
 
-def run_scenario(name, overrides_per_bloc, n_runs=N_RUNS, ai_shock=True, seed_base=10000):
+def run_scenario(name, overrides_per_bloc, n_runs=N_RUNS, ai_shock=True, seed_base=10000, K=None):
     """
     overrides_per_bloc: dict like {'Mosaic': {'aiGrowth': 100, 'robotGrowth': 100}}
+    K: optional dict of model constants. If None, uses sim_v5.DEFAULT_CONSTANTS.
+       Pass a partial dict to override specific constants while keeping others
+       at defaults — they will be merged with DEFAULT_CONSTANTS.
     Returns dict {bloc: {median, p5, p95, mean, stdev, war_count}}
     """
+    # Merge K with defaults so callers can pass partial overrides
+    if K is None:
+        K_full = sim_v5.DEFAULT_CONSTANTS
+    else:
+        K_full = {**sim_v5.DEFAULT_CONSTANTS, **K}
+
     rules_for_run = {
         'OM': dict(sim_v5.OPEN_MARKET),
         'SC': dict(sim_v5.SOCIAL_COMPACT),
@@ -41,9 +50,9 @@ def run_scenario(name, overrides_per_bloc, n_runs=N_RUNS, ai_shock=True, seed_ba
             blocs[k]['wars_as_target'] = []
             blocs[k]['wars_as_aggressor'] = []
         for t in range(1, 151):
-            inputs = sim_v5.compute_interactions(blocs, t, rng)
+            inputs = sim_v5.compute_interactions(blocs, t, rng, K=K_full)
             for k in blocs:
-                sim_v5.step_bloc(blocs[k], t, rng, inputs[k], ai_shock_active=ai_shock)
+                sim_v5.step_bloc(blocs[k], t, rng, inputs[k], ai_shock_active=ai_shock, K=K_full)
         run_war_count = 0
         for k in blocs:
             avg_mort = blocs[k]['cumulativeMortality'] / 150
